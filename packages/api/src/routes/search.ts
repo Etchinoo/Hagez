@@ -308,7 +308,9 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // ── GET /businesses/:id/slots ──────────────────────────────
+  // ── GET /businesses/:id/slots (US-016) ────────────────────
+  // Real-time availability — Redis-cached for 60s per date+partySize+resource.
+  // Cache invalidated on booking confirmation (in booking engine).
 
   fastify.get<{
     Params: { id: string };
@@ -323,6 +325,14 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
 
       const dateStart = date ? new Date(date) : new Date();
       const dateEnd = new Date(dateStart.getTime() + 24 * 60 * 60 * 1000);
+      const dateKey = dateStart.toISOString().slice(0, 10);
+
+      // Try Redis cache first (60-second TTL — real-time per US-016)
+      const cacheKey = `SLOTS:${id}:${dateKey}:${partySizeNum}:${resource_id ?? 'any'}`;
+      const cached = await fastify.redis.get(cacheKey);
+      if (cached) {
+        return reply.send(JSON.parse(cached));
+      }
 
       const whereClause: any = {
         business_id: id,
@@ -337,7 +347,7 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         orderBy: { start_time: 'asc' },
       });
 
-      return reply.send({
+      const payload = {
         slots: slots.map((s) => ({
           id: s.id,
           start_time: s.start_time.toISOString(),
@@ -347,7 +357,10 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
           deposit_amount: Number(s.deposit_amount),
           cancellation_window_hours: s.cancellation_window_hours,
         })),
-      });
+      };
+
+      await fastify.redis.set(cacheKey, JSON.stringify(payload), 'EX', 60);
+      return reply.send(payload);
     }
   );
 

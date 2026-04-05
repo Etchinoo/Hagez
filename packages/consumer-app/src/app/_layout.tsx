@@ -86,6 +86,7 @@ export default function RootLayout() {
           <Stack.Screen name="booking/checkout" options={{ presentation: 'modal' }} />
           <Stack.Screen name="booking/payment" options={{ presentation: 'modal' }} />
           <Stack.Screen name="booking/confirmed" options={{ presentation: 'card', gestureEnabled: false }} />
+          <Stack.Screen name="bookings/[id]/index" options={{ presentation: 'card' }} />
         </Stack>
       </AuthGuard>
     </QueryClientProvider>

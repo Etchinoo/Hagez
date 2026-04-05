@@ -4,10 +4,10 @@
 // POST   /bookings/:id/pay
 // GET    /bookings/:id
 // GET    /bookings
-// PATCH  /bookings/:id/reschedule
+// PATCH  /bookings/:id/reschedule     ← US-021
 // PATCH  /bookings/:id/cancel
 // POST   /bookings/:id/reviews
-// POST   /webhooks/paymob (Paymob payment webhook)
+// POST   /webhooks/paymob
 // ============================================================
 
 import type { FastifyPluginAsync } from 'fastify';
@@ -15,7 +15,9 @@ import {
   createBookingWithHold,
   confirmBooking,
   cancelBooking,
+  rescheduleBooking,
   BookingEngineError,
+  BookingEngineErrorWithData,
   BOOKING_ERROR_MESSAGES,
 } from '../services/booking-engine.js';
 import {
@@ -23,12 +25,10 @@ import {
   generatePaymentKey,
   verifyPaymobWebhook,
   isTransactionAlreadyProcessed,
-  executeNoShowSplit,
 } from '../services/payment.js';
 import {
   sendBookingConfirmation,
   scheduleReminders,
-  scheduleReviewPrompt,
 } from '../services/notification.js';
 import type { JwtAccessPayload } from '../types/index.js';
 
@@ -43,13 +43,19 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       resource_id?: string;
       occasion?: string;
       special_requests?: string;
+      section_preference?: string;
+      override_consumer_overlap?: boolean;
     };
   }>(
     '/bookings',
     { preHandler: fastify.authenticate },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
-      const { slot_id, business_id, party_size = 1, resource_id, occasion, special_requests } = request.body;
+      const {
+        slot_id, business_id, party_size = 1,
+        resource_id, occasion, special_requests,
+        section_preference, override_consumer_overlap,
+      } = request.body;
 
       try {
         const result = await createBookingWithHold(fastify.db, fastify.redis, {
@@ -60,9 +66,10 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           party_size,
           occasion,
           special_requests,
+          section_preference,
+          override_consumer_overlap,
         });
 
-        // Create Paymob order and payment key
         const consumer = await fastify.db.user.findUniqueOrThrow({ where: { id: user.sub } });
         const booking = await fastify.db.booking.findUniqueOrThrow({
           where: { id: result.booking_id },
@@ -79,7 +86,6 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           consumer_email: consumer.email ?? undefined,
         });
 
-        // Store paymob order ID
         await fastify.db.booking.update({
           where: { id: result.booking_id },
           data: { paymob_order_id: order_id },
@@ -95,6 +101,17 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           platform_fee_egp: Number(booking.platform_fee),
         });
       } catch (err) {
+        if (err instanceof BookingEngineErrorWithData) {
+          const errorInfo = BOOKING_ERROR_MESSAGES[err.code];
+          return reply.code(errorInfo?.status ?? 409).send({
+            error: {
+              code: err.code,
+              message: errorInfo?.en ?? 'Booking failed.',
+              message_ar: errorInfo?.ar ?? 'فشل الحجز.',
+              ...err.data,
+            },
+          });
+        }
         if (err instanceof BookingEngineError) {
           const errorInfo = BOOKING_ERROR_MESSAGES[err.code];
           return reply.code(errorInfo?.status ?? 409).send({
@@ -114,7 +131,7 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{
     Params: { id: string };
-    Body: { payment_method: string; paymob_token?: string };
+    Body: { payment_method: string };
   }>(
     '/bookings/:id/pay',
     { preHandler: fastify.authenticate },
@@ -142,17 +159,12 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
         consumer_email: consumer.email ?? undefined,
       });
 
-      // Update payment method on booking
       await fastify.db.booking.update({
         where: { id },
         data: { payment_method: payment_method as any },
       });
 
-      return reply.send({
-        payment_key,
-        iframe_url,
-        booking_ref: booking.booking_ref,
-      });
+      return reply.send({ payment_key, iframe_url, booking_ref: booking.booking_ref });
     }
   );
 
@@ -174,7 +186,9 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
             ...(status ? { status: status as any } : {}),
           },
           include: {
-            business: { select: { name_ar: true, name_en: true, district: true } },
+            business: {
+              select: { id: true, name_ar: true, name_en: true, district: true, category: true },
+            },
             slot: { select: { start_time: true, end_time: true } },
           },
           orderBy: { created_at: 'desc' },
@@ -186,7 +200,23 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
-      return reply.send({ bookings, total });
+      return reply.send({
+        bookings: bookings.map((b) => ({
+          id: b.id,
+          booking_ref: b.booking_ref,
+          status: b.status,
+          party_size: b.party_size,
+          business_id: b.business_id,
+          business: b.business,
+          slot: b.slot,
+          deposit_amount: Number(b.deposit_amount),
+          platform_fee: Number(b.platform_fee),
+          created_at: b.created_at,
+        })),
+        total,
+        page: pageNum,
+        has_more: (pageNum - 1) * limit + bookings.length < total,
+      });
     }
   );
 
@@ -204,6 +234,7 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           slot: true,
           payments: true,
           review: true,
+          status_logs: { orderBy: { created_at: 'asc' } },
         },
       });
 
@@ -214,6 +245,46 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       return reply.send(booking);
+    }
+  );
+
+  // ── PATCH /bookings/:id/reschedule (US-021) ────────────────
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: { new_slot_id: string };
+  }>(
+    '/bookings/:id/reschedule',
+    { preHandler: fastify.authenticate },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+
+      try {
+        const result = await rescheduleBooking(
+          fastify.db,
+          fastify.redis,
+          request.params.id,
+          request.body.new_slot_id,
+          user.sub
+        );
+        return reply.send({
+          booking_ref: result.new_booking_ref,
+          slot_hold_expires_at: result.slot_hold_expires_at.toISOString(),
+          message_ar: 'تم تغيير موعد حجزك بنجاح.',
+        });
+      } catch (err) {
+        if (err instanceof BookingEngineError) {
+          const errorInfo = BOOKING_ERROR_MESSAGES[err.code];
+          return reply.code(errorInfo?.status ?? 409).send({
+            error: {
+              code: err.code,
+              message: errorInfo?.en ?? 'Reschedule failed.',
+              message_ar: errorInfo?.ar ?? 'فشل تغيير الموعد.',
+            },
+          });
+        }
+        throw err;
+      }
     }
   );
 
@@ -240,19 +311,15 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.send({
           refund_amount: result.refund_amount,
           deposit_forfeited: result.deposit_forfeited,
-          message: result.deposit_forfeited
-            ? 'Booking cancelled. Deposit forfeited per cancellation policy.'
-            : 'Booking cancelled. Refund will be processed in 3–5 business days.',
+          message_ar: result.deposit_forfeited
+            ? 'تم إلغاء الحجز. العربون لن يُسترد حسب سياسة الإلغاء.'
+            : 'تم إلغاء الحجز. سيتم استرداد العربون خلال 3–5 أيام عمل.',
         });
       } catch (err) {
         if (err instanceof BookingEngineError) {
           const errorInfo = BOOKING_ERROR_MESSAGES[err.code];
           return reply.code(errorInfo?.status ?? 409).send({
-            error: {
-              code: err.code,
-              message: errorInfo?.en ?? 'Cancellation failed.',
-              message_ar: errorInfo?.ar ?? 'فشل الإلغاء.',
-            },
+            error: { code: err.code, message: errorInfo?.en ?? 'Cancellation failed.', message_ar: errorInfo?.ar ?? 'فشل الإلغاء.' },
           });
         }
         throw err;
@@ -309,7 +376,6 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // ── POST /webhooks/paymob ──────────────────────────────────
-  // Handles payment success/failure callbacks from Paymob
 
   fastify.post<{ Body: { obj: Record<string, unknown>; type: string } }>(
     '/webhooks/paymob',
@@ -318,7 +384,6 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
       if (type !== 'TRANSACTION') return reply.code(200).send('OK');
 
-      // HMAC verification
       if (!verifyPaymobWebhook(obj)) {
         fastify.log.warn('Paymob webhook HMAC verification failed');
         return reply.code(401).send('Invalid HMAC');
@@ -328,7 +393,6 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       const success = obj['success'] === true;
       const merchantOrderId = (obj['order'] as any)?.['merchant_order_id'] as string;
 
-      // Idempotency check
       if (await isTransactionAlreadyProcessed(fastify.db, transactionId)) {
         return reply.code(200).send('Already processed');
       }
@@ -344,10 +408,14 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       if (success) {
-        // Confirm booking
-        await confirmBooking(fastify.db, fastify.redis, booking.id, String((obj['order'] as any)?.id), String(obj['source_data.type'] ?? 'card'));
+        await confirmBooking(
+          fastify.db,
+          fastify.redis,
+          booking.id,
+          String((obj['order'] as any)?.id),
+          String(obj['source_data.type'] ?? 'card')
+        );
 
-        // Create payment records
         await fastify.db.$transaction([
           fastify.db.payment.create({
             data: {
@@ -375,11 +443,9 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           }),
         ]);
 
-        // Send confirmations + schedule reminders
         await sendBookingConfirmation(fastify.db, booking.id);
         await scheduleReminders(fastify.db, booking.id);
       } else {
-        // Payment failed — expire booking (slot lock will have already expired or be released by job)
         await fastify.db.booking.update({
           where: { id: booking.id },
           data: { status: 'expired' },
