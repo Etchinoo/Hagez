@@ -23,6 +23,7 @@ import businessRoutes from './routes/business.js';
 import adminRoutes from './routes/admin.js';
 
 import { startNoShowDetectionJob, startSlotHoldExpiryJob } from './jobs/no-show-detection.js';
+import { startDailyPayoutJob } from './jobs/payout.js';
 
 const fastify = Fastify({
   logger:
@@ -129,6 +130,7 @@ async function start() {
     const db = app.db;
     startNoShowDetectionJob(db);
     startSlotHoldExpiryJob(db);
+    startDailyPayoutJob(db);   // US-036: 23:00 Africa/Cairo
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);

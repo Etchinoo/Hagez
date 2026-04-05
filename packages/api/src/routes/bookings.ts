@@ -25,10 +25,13 @@ import {
   generatePaymentKey,
   verifyPaymobWebhook,
   isTransactionAlreadyProcessed,
+  initiateRefund,
 } from '../services/payment.js';
 import {
   sendBookingConfirmation,
   scheduleReminders,
+  sendPaymentReceipt,
+  sendCancellationConfirmed,
 } from '../services/notification.js';
 import type { JwtAccessPayload } from '../types/index.js';
 
@@ -308,6 +311,45 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
       try {
         const result = await cancelBooking(fastify.db, request.params.id, 'consumer', request.body.reason);
+
+        // US-034: Auto-trigger Paymob refund when deposit is refundable
+        if (result.refund_amount > 0) {
+          const depositPayment = await fastify.db.payment.findFirst({
+            where: { booking_id: request.params.id, type: 'deposit', status: 'completed' },
+          });
+
+          if (depositPayment?.paymob_transaction_id) {
+            try {
+              await initiateRefund({
+                paymob_transaction_id: depositPayment.paymob_transaction_id,
+                amount_egp: result.refund_amount,
+              });
+              await fastify.db.payment.create({
+                data: {
+                  booking_id: request.params.id,
+                  type: 'refund',
+                  direction: 'outbound',
+                  amount: result.refund_amount,
+                  currency: 'EGP',
+                  status: 'pending',
+                  recipient_type: 'consumer',
+                  recipient_id: booking.consumer_id,
+                },
+              });
+            } catch (refundErr) {
+              fastify.log.error({ bookingId: request.params.id, refundErr }, 'Auto-refund via Paymob failed — ops must process manually');
+            }
+          }
+        }
+
+        // US-034: Cancellation WhatsApp notification
+        await sendCancellationConfirmed(
+          fastify.db,
+          request.params.id,
+          result.refund_amount,
+          result.deposit_forfeited
+        ).catch((err) => fastify.log.error(err, 'Failed to send cancellation notification'));
+
         return reply.send({
           refund_amount: result.refund_amount,
           deposit_forfeited: result.deposit_forfeited,
@@ -372,6 +414,55 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return reply.code(201).send({ review_id: review.id, status: 'pending' });
+    }
+  );
+
+  // ── GET /bookings/:id/receipt (US-032) ────────────────────
+  // Returns receipt data for PDF download from the consumer app.
+
+  fastify.get<{ Params: { id: string } }>(
+    '/bookings/:id/receipt',
+    { preHandler: fastify.authenticate },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const booking = await fastify.db.booking.findUnique({
+        where: { id: request.params.id },
+        include: {
+          business: { select: { name_ar: true, name_en: true, district: true, category: true } },
+          slot: { select: { start_time: true, end_time: true, cancellation_window_hours: true } },
+          payments: { where: { status: 'completed' } },
+        },
+      });
+
+      if (!booking || booking.consumer_id !== user.sub) {
+        return reply.code(404).send({
+          error: { code: 'NOT_FOUND', message: 'Booking not found.', message_ar: 'الحجز غير موجود.' },
+        });
+      }
+
+      const depositAmount = Number(booking.deposit_amount);
+      const platformFee = Number(booking.platform_fee);
+
+      return reply.send({
+        booking_ref: booking.booking_ref,
+        status: booking.status,
+        business_name_ar: booking.business.name_ar,
+        business_name_en: booking.business.name_en,
+        district: booking.business.district,
+        category: booking.business.category,
+        slot_start: booking.slot.start_time,
+        slot_end: booking.slot.end_time,
+        party_size: booking.party_size,
+        deposit_amount_egp: depositAmount,
+        platform_fee_egp: platformFee,
+        total_paid_egp: depositAmount + platformFee,
+        payment_method: booking.payment_method,
+        cancellation_window_hours: booking.slot.cancellation_window_hours,
+        refund_policy_ar: depositAmount > 0
+          ? `يمكن الإلغاء مجاناً قبل ${booking.slot.cancellation_window_hours} ساعة من الموعد. بعد ذلك يُحتجز العربون.`
+          : 'لا يوجد عربون — الإلغاء مجاني.',
+        issued_at: new Date().toISOString(),
+      });
     }
   );
 
@@ -445,6 +536,8 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
         await sendBookingConfirmation(fastify.db, booking.id);
         await scheduleReminders(fastify.db, booking.id);
+        // US-032: Send Arabic payment receipt via WhatsApp
+        await sendPaymentReceipt(fastify.db, booking.id);
       } else {
         await fastify.db.booking.update({
           where: { id: booking.id },

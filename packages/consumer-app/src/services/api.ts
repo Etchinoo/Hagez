@@ -88,6 +88,15 @@ export const usersApi = {
     api.patch('/users/me', data),
 };
 
+// userApi alias (used in payment screen for card-on-file check)
+export const userApi = {
+  getProfile: () => api.get('/users/me'),
+  saveCardToken: (paymob_card_token: string) =>
+    api.post('/users/me/payment-token', { paymob_card_token }),
+  removeCardToken: () => api.delete('/users/me/payment-token'),
+  getReceipt: (bookingId: string) => api.get(`/bookings/${bookingId}/receipt`),
+};
+
 // ── Auth API ─────────────────────────────────────────────────
 
 export const authApi = {
@@ -120,6 +129,8 @@ export const bookingApi = {
     resource_id?: string;
     occasion?: string;
     special_requests?: string;
+    section_preference?: string;
+    override_consumer_overlap?: boolean;
   }) => api.post('/bookings', data),
 
   initiatePayment: (bookingId: string, paymentMethod: string) =>

@@ -87,6 +87,19 @@ export const slotsApi = {
     dashboardApi.patch(`/business/slots/${id}/block`, { reason }),
 };
 
+// ── Business Policy (US-033, US-036) ─────────────────────────
+
+export const businessApi = {
+  getPolicy: () => dashboardApi.get('/business/policy'),
+  updatePolicy: (data: {
+    deposit_type?: 'fixed' | 'percentage';
+    deposit_value?: number;
+    cancellation_window_hours?: number;
+    payout_method?: 'bank_transfer' | 'paymob_wallet';
+    payout_threshold_egp?: number;
+  }) => dashboardApi.put('/business/policy', data),
+};
+
 // ── Analytics ────────────────────────────────────────────────
 
 export const analyticsApi = {

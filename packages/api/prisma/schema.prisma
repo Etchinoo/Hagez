@@ -159,23 +159,24 @@ enum ResourceType {
 // ─────────────────────────────────────────────────────────────
 
 model User {
-  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  phone             String      @unique @db.VarChar(20)
-  email             String?     @unique @db.VarChar(255)
-  full_name         String      @db.VarChar(100)
-  language_pref     String      @default("ar") @db.Char(2)
-  profile_photo_url String?
-  status            UserStatus  @default(active)
-  no_show_count     Int         @default(0) @db.SmallInt
-  deposit_mandatory Boolean     @default(false)
-  fcm_token         String?     // Firebase push token — updated on app open
-  created_at        DateTime    @default(now()) @db.Timestamptz
-  updated_at        DateTime    @updatedAt @db.Timestamptz
+  id                  String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone               String      @unique @db.VarChar(20)
+  email               String?     @unique @db.VarChar(255)
+  full_name           String      @db.VarChar(100)
+  language_pref       String      @default("ar") @db.Char(2)
+  profile_photo_url   String?
+  status              UserStatus  @default(active)
+  no_show_count       Int         @default(0) @db.SmallInt
+  deposit_mandatory   Boolean     @default(false)
+  fcm_token           String?     // Firebase push token — updated on app open
+  paymob_card_token   String?     @db.VarChar(200) // US-031: tokenised card for no-show protection
+  created_at          DateTime    @default(now()) @db.Timestamptz
+  updated_at          DateTime    @updatedAt @db.Timestamptz
 
   // Relations
-  owned_businesses  Business[]  @relation("BusinessOwner")
-  bookings          Booking[]   @relation("ConsumerBookings")
-  reviews           Review[]
+  owned_businesses    Business[]  @relation("BusinessOwner")
+  bookings            Booking[]   @relation("ConsumerBookings")
+  reviews             Review[]
 
   @@map("users")
 }
@@ -201,33 +202,40 @@ model OtpRequest {
 // ─────────────────────────────────────────────────────────────
 
 model Business {
-  id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  owner_user_id           String            @db.Uuid
-  name_ar                 String            @db.VarChar(200)
-  name_en                 String?           @db.VarChar(200)
-  category                BusinessCategory
-  district                String            @db.VarChar(100)
-  lat                     Decimal           @db.Decimal(10, 7)
-  lng                     Decimal           @db.Decimal(10, 7)
-  description_ar          String?
-  description_en          String?
-  status                  BusinessStatus    @default(pending)
-  verified_at             DateTime?         @db.Timestamptz
-  subscription_tier       SubscriptionTier  @default(free)
-  subscription_expires_at DateTime?         @db.Timestamptz
-  rating_avg              Decimal           @default(0.00) @db.Decimal(3, 2)
-  review_count            Int               @default(0)
-  is_featured             Boolean           @default(false)
-  featured_until          DateTime?         @db.Timestamptz
-  created_at              DateTime          @default(now()) @db.Timestamptz
+  id                              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  owner_user_id                   String            @db.Uuid
+  name_ar                         String            @db.VarChar(200)
+  name_en                         String?           @db.VarChar(200)
+  category                        BusinessCategory
+  district                        String            @db.VarChar(100)
+  lat                             Decimal           @db.Decimal(10, 7)
+  lng                             Decimal           @db.Decimal(10, 7)
+  description_ar                  String?
+  description_en                  String?
+  status                          BusinessStatus    @default(pending)
+  verified_at                     DateTime?         @db.Timestamptz
+  subscription_tier               SubscriptionTier  @default(free)
+  subscription_expires_at         DateTime?         @db.Timestamptz
+  rating_avg                      Decimal           @default(0.00) @db.Decimal(3, 2)
+  review_count                    Int               @default(0)
+  is_featured                     Boolean           @default(false)
+  featured_until                  DateTime?         @db.Timestamptz
+  // US-033: deposit policy config (applied to new slots)
+  policy_deposit_type             String            @default("fixed") @db.VarChar(10) // "fixed" | "percentage"
+  policy_deposit_value            Decimal           @default(0.00) @db.Decimal(10, 2) // EGP amount or %
+  policy_cancellation_window_hours Int              @default(24) @db.SmallInt
+  // US-036: payout preference
+  payout_method                   String            @default("paymob_wallet") @db.VarChar(30) // "bank_transfer" | "paymob_wallet"
+  payout_threshold_egp            Decimal           @default(50.00) @db.Decimal(10, 2)
+  created_at                      DateTime          @default(now()) @db.Timestamptz
 
   // Relations
-  owner                   User              @relation("BusinessOwner", fields: [owner_user_id], references: [id])
-  slots                   Slot[]
-  bookings                Booking[]
-  reviews                 Review[]
-  resources               Resource[]
-  photos                  BusinessPhoto[]
+  owner                           User              @relation("BusinessOwner", fields: [owner_user_id], references: [id])
+  slots                           Slot[]
+  bookings                        Booking[]
+  reviews                         Review[]
+  resources                       Resource[]
+  photos                          BusinessPhoto[]
 
   @@index([district, category, status])
   @@map("businesses")
@@ -334,12 +342,32 @@ model Booking {
   payments            Payment[]
   review              Review?
   notifications       Notification[]
+  status_logs         BookingStatusLog[]
 
   @@index([consumer_id, status])
   @@index([business_id, status])
   // No-show detection job index
   @@index([status, slot_id])
   @@map("bookings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: booking_status_logs (audit trail for state transitions)
+// ─────────────────────────────────────────────────────────────
+
+model BookingStatusLog {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_id  String    @db.Uuid
+  from_status String    @db.VarChar(40)
+  to_status   String    @db.VarChar(40)
+  actor       String    @db.VarChar(20) // "consumer" | "business" | "platform" | "system"
+  reason      String?   @db.VarChar(200)
+  created_at  DateTime  @default(now()) @db.Timestamptz
+
+  booking     Booking   @relation(fields: [booking_id], references: [id])
+
+  @@index([booking_id])
+  @@map("booking_status_logs")
 }
 
 // ─────────────────────────────────────────────────────────────

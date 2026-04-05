@@ -23,7 +23,10 @@ type NotificationTemplate =
   | 'no_show_consumer_ar'
   | 'no_show_business_ar'
   | 'cancellation_confirmed_ar'
-  | 'business_cancelled_ar';
+  | 'business_cancelled_ar'
+  | 'payment_receipt_ar'
+  | 'refund_confirmed_ar'
+  | 'payout_failed_ar';
 
 // ── Enqueue a Notification ───────────────────────────────────
 
@@ -236,6 +239,92 @@ export async function sendNoShowNotifications(
       },
     }),
   ]);
+}
+
+// ── US-032: Payment Receipt (WhatsApp — sent on payment success) ──
+
+export async function sendPaymentReceipt(
+  db: PrismaClient,
+  bookingId: string
+): Promise<void> {
+  const booking = await db.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { consumer: true, business: true, slot: true },
+  });
+
+  const depositAmount = Number(booking.deposit_amount);
+  const platformFee = Number(booking.platform_fee);
+  const total = depositAmount + platformFee;
+  const datetimeAr = formatDatetimeAr(booking.slot.start_time);
+
+  await enqueueNotification(db, {
+    recipient_id: booking.consumer_id,
+    recipient_type: 'consumer',
+    booking_id: bookingId,
+    channel: 'whatsapp',
+    template_key: 'payment_receipt_ar',
+    payload: {
+      booking_ref: booking.booking_ref,
+      business_name_ar: booking.business.name_ar,
+      datetime_ar: datetimeAr,
+      deposit_amount: depositAmount,
+      platform_fee: platformFee,
+      total_amount: total,
+      refund_policy_hours: booking.slot.cancellation_window_hours,
+      receipt_link: `https://app.reservr.eg/bookings/${booking.id}/receipt`,
+    },
+  });
+}
+
+// ── Cancellation / Refund Notifications ──────────────────────
+
+export async function sendCancellationConfirmed(
+  db: PrismaClient,
+  bookingId: string,
+  refundAmount: number,
+  depositForfeited: boolean
+): Promise<void> {
+  const booking = await db.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { consumer: true, business: true, slot: true },
+  });
+
+  await enqueueNotification(db, {
+    recipient_id: booking.consumer_id,
+    recipient_type: 'consumer',
+    booking_id: bookingId,
+    channel: 'whatsapp',
+    template_key: 'cancellation_confirmed_ar',
+    payload: {
+      booking_ref: booking.booking_ref,
+      business_name_ar: booking.business.name_ar,
+      deposit_forfeited: depositForfeited,
+      refund_amount: refundAmount,
+      refund_eta: depositForfeited ? null : '3–5 أيام عمل',
+    },
+  });
+}
+
+export async function sendPayoutFailedAlert(
+  db: PrismaClient,
+  businessId: string,
+  amountEgp: number
+): Promise<void> {
+  const business = await db.business.findUniqueOrThrow({
+    where: { id: businessId },
+    select: { owner_user_id: true, name_ar: true },
+  });
+
+  await enqueueNotification(db, {
+    recipient_id: businessId,
+    recipient_type: 'business',
+    channel: 'whatsapp',
+    template_key: 'payout_failed_ar',
+    payload: {
+      business_name_ar: business.name_ar,
+      amount_egp: amountEgp,
+    },
+  });
 }
 
 // ── Helpers ──────────────────────────────────────────────────

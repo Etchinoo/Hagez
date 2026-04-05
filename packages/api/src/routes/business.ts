@@ -11,7 +11,8 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { cancelBooking } from '../services/booking-engine.js';
-import { scheduleReviewPrompt } from '../services/notification.js';
+import { scheduleReviewPrompt, sendCancellationConfirmed, sendPayoutFailedAlert } from '../services/notification.js';
+import { initiateRefund } from '../services/payment.js';
 import type { JwtAccessPayload } from '../types/index.js';
 
 const businessRoutes: FastifyPluginAsync = async (fastify) => {
@@ -84,11 +85,31 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       const now = new Date();
 
       if (status === 'completed') {
-        await fastify.db.booking.update({
-          where: { id: booking.id },
-          data: { status: 'completed', completed_at: now, escrow_status: 'released_to_business' },
-        });
-        // Schedule review prompt
+        const depositAmount = Number(booking.deposit_amount);
+
+        await fastify.db.$transaction([
+          fastify.db.booking.update({
+            where: { id: booking.id },
+            data: { status: 'completed', completed_at: now, escrow_status: 'released_to_business' },
+          }),
+          // US-030: Create pending payout record — picked up by daily payout job (US-036)
+          ...(depositAmount > 0
+            ? [fastify.db.payment.create({
+                data: {
+                  booking_id: booking.id,
+                  type: 'deposit',
+                  direction: 'outbound',
+                  amount: depositAmount,
+                  currency: 'EGP',
+                  status: 'pending',
+                  recipient_type: 'business',
+                  recipient_id: booking.business_id,
+                },
+              })]
+            : []),
+        ]);
+
+        // Schedule review prompt 2h after slot end
         await scheduleReviewPrompt(fastify.db, booking.id);
         return reply.send({ booking_ref: booking.booking_ref, new_status: 'completed', payout_triggered: true });
       }
@@ -323,6 +344,108 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
   );
+  // ── PUT /business/policy (US-033) ─────────────────────────
+  // Business owner sets their deposit + cancellation policy.
+  // Changes apply to NEW slots only — existing bookings grandfathered.
+
+  fastify.put<{
+    Body: {
+      deposit_type: 'fixed' | 'percentage';
+      deposit_value: number;
+      cancellation_window_hours: number;
+      payout_method?: 'bank_transfer' | 'paymob_wallet';
+    };
+  }>(
+    '/business/policy',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const { deposit_type, deposit_value, cancellation_window_hours, payout_method } = request.body;
+
+      if (!['fixed', 'percentage'].includes(deposit_type)) {
+        return reply.code(400).send({ error: { code: 'INVALID_DEPOSIT_TYPE', message: 'deposit_type must be "fixed" or "percentage".', message_ar: 'نوع العربون يجب أن يكون "fixed" أو "percentage".' } });
+      }
+      if (deposit_type === 'percentage' && (deposit_value < 0 || deposit_value > 100)) {
+        return reply.code(400).send({ error: { code: 'INVALID_DEPOSIT_VALUE', message: 'Percentage must be 0–100.', message_ar: 'النسبة المئوية يجب أن تكون بين 0 و 100.' } });
+      }
+      if (cancellation_window_hours < 0 || cancellation_window_hours > 168) {
+        return reply.code(400).send({ error: { code: 'INVALID_WINDOW', message: 'Cancellation window must be 0–168 hours.', message_ar: 'نافذة الإلغاء يجب أن تكون بين 0 و 168 ساعة.' } });
+      }
+
+      const updated = await fastify.db.business.update({
+        where: { id: business.id },
+        data: {
+          policy_deposit_type: deposit_type,
+          policy_deposit_value: deposit_value,
+          policy_cancellation_window_hours: cancellation_window_hours,
+          ...(payout_method ? { payout_method } : {}),
+        },
+        select: {
+          policy_deposit_type: true,
+          policy_deposit_value: true,
+          policy_cancellation_window_hours: true,
+          payout_method: true,
+        },
+      });
+
+      return reply.send({
+        ...updated,
+        policy_deposit_value: Number(updated.policy_deposit_value),
+        // Consumer-facing preview of the policy (Arabic)
+        policy_preview_ar: buildPolicyPreviewAr(
+          deposit_type,
+          Number(updated.policy_deposit_value),
+          cancellation_window_hours
+        ),
+      });
+    }
+  );
+
+  // ── GET /business/policy ───────────────────────────────────
+
+  fastify.get(
+    '/business/policy',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      return reply.send({
+        deposit_type: business.policy_deposit_type,
+        deposit_value: Number(business.policy_deposit_value),
+        cancellation_window_hours: business.policy_cancellation_window_hours,
+        payout_method: business.payout_method,
+        payout_threshold_egp: Number(business.payout_threshold_egp),
+        policy_preview_ar: buildPolicyPreviewAr(
+          business.policy_deposit_type,
+          Number(business.policy_deposit_value),
+          business.policy_cancellation_window_hours
+        ),
+      });
+    }
+  );
 };
+
+// ── Helper: Build Arabic policy preview string ─────────────
+
+function buildPolicyPreviewAr(
+  depositType: string,
+  depositValue: number,
+  cancellationWindowHours: number
+): string {
+  const depositText = depositType === 'fixed'
+    ? `${depositValue} ج.م`
+    : `${depositValue}% من قيمة الخدمة`;
+
+  if (cancellationWindowHours === 0) {
+    return `يُطلب عربون ${depositText}. سياسة الإلغاء: العربون غير قابل للاسترداد.`;
+  }
+
+  return `يُطلب عربون ${depositText}. يمكن الإلغاء مجاناً قبل ${cancellationWindowHours} ساعة من الموعد. الإلغاء بعد ذلك يُفقدك العربون.`;
+}
 
 export default businessRoutes;
