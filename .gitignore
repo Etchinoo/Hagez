@@ -1,15 +1,31 @@
 # Dependencies
 node_modules/
+jspm_packages/
 .pnp
 .pnp.js
+.pnp.*
+web_modules/
 
 # Build outputs
 dist/
 build/
+build/Release
 .next/
 out/
+.nuxt/
 .expo/
 .turbo/
+.svelte-kit/
+**/.vitepress/dist
+**/.vitepress/cache
+.docusaurus/
+.vuepress/dist
+.temp/
+.cache/
+.parcel-cache/
+.fusebox/
+.serverless/
+web-build/
 
 # Environment files — never commit these
 .env
@@ -17,16 +33,48 @@ out/
 .env.*.local
 .env.staging
 .env.production
+# (allow .env.example for documentation)
 
 # Prisma
 packages/api/prisma/migrations/*.sql.bak
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Test coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Optional caches
+.npm
+.eslintcache
+.stylelintcache
+.node_repl_history
+.yarn-integrity
+.dynamodb/
+.firebase/
+
+# Package outputs
+*.tgz
 
 # OS
 .DS_Store
@@ -35,24 +83,29 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/settings.json
+.vscode-test/
+.tern-port
 *.swp
 *.swo
 
-# Test coverage
-coverage/
-.nyc_output/
-
-# Mobile
+# Mobile / code signing — never commit these
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
 *.orig.*
-web-build/
 
 # AWS
 .aws/
+
+# Yarn v3
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
 
 # Temporary files
 tmp/
