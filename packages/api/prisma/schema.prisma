@@ -1,0 +1,418 @@
+// ============================================================
+// SUPER RESERVATION PLATFORM — Prisma Schema
+// DB: PostgreSQL 15+ | AWS RDS me-south-1
+// All timestamps UTC. Application converts to Africa/Cairo for display.
+// Soft deletes on users/businesses via status field — no hard DELETE.
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  engineType      = "binary"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  shadowDatabaseUrl = env("DATABASE_SHADOW_URL")
+  extensions = [pgcrypto]
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  active
+  suspended
+  deleted
+}
+
+enum BusinessCategory {
+  restaurant
+  salon
+  court
+  gaming_cafe
+  medical
+  car_wash
+}
+
+enum BusinessStatus {
+  pending
+  active
+  suspended
+  deactivated
+}
+
+enum SubscriptionTier {
+  free
+  starter
+  growth
+  pro
+  enterprise
+}
+
+enum SlotStatus {
+  available
+  fully_booked
+  blocked
+  past
+}
+
+enum BookingStatus {
+  pending_payment
+  confirmed
+  completed
+  cancelled_by_consumer
+  cancelled_by_business
+  no_show
+  disputed
+  expired
+}
+
+enum EscrowStatus {
+  holding
+  released_to_business
+  refunded_to_consumer
+  split_executed
+}
+
+enum OccasionType {
+  birthday
+  anniversary
+  business
+  other
+}
+
+enum PaymentType {
+  booking_fee
+  deposit
+  no_show_penalty
+  refund
+  subscription
+}
+
+enum PaymentDirection {
+  inbound
+  outbound
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+  refunded
+}
+
+enum PaymentMethod {
+  card
+  instapay
+  fawry
+  vodafone_cash
+  meeza
+  card_on_file
+}
+
+enum RecipientType {
+  consumer
+  business
+  platform
+}
+
+enum ReviewStatus {
+  pending
+  approved
+  rejected
+  removed
+}
+
+enum NotificationChannel {
+  whatsapp
+  sms
+  push
+  email
+}
+
+enum NotificationStatus {
+  queued
+  sent
+  delivered
+  failed
+  bounced
+}
+
+enum NotificationRecipientType {
+  consumer
+  business
+}
+
+enum ResourceType {
+  staff        // Salon stylist
+  table        // Restaurant table
+  court        // Sports court
+  station      // Gaming station
+  bay          // Car wash bay
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: users
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id                String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone             String      @unique @db.VarChar(20)
+  email             String?     @unique @db.VarChar(255)
+  full_name         String      @db.VarChar(100)
+  language_pref     String      @default("ar") @db.Char(2)
+  profile_photo_url String?
+  status            UserStatus  @default(active)
+  no_show_count     Int         @default(0) @db.SmallInt
+  deposit_mandatory Boolean     @default(false)
+  fcm_token         String?     // Firebase push token — updated on app open
+  created_at        DateTime    @default(now()) @db.Timestamptz
+  updated_at        DateTime    @updatedAt @db.Timestamptz
+
+  // Relations
+  owned_businesses  Business[]  @relation("BusinessOwner")
+  bookings          Booking[]   @relation("ConsumerBookings")
+  reviews           Review[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: otp_requests (OTP verification flow)
+// ─────────────────────────────────────────────────────────────
+
+model OtpRequest {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone       String    @db.VarChar(20)
+  otp_hash    String    @db.VarChar(255)  // bcrypt hash of OTP
+  expires_at  DateTime  @db.Timestamptz
+  used        Boolean   @default(false)
+  created_at  DateTime  @default(now()) @db.Timestamptz
+
+  @@index([phone])
+  @@map("otp_requests")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: businesses
+// ─────────────────────────────────────────────────────────────
+
+model Business {
+  id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  owner_user_id           String            @db.Uuid
+  name_ar                 String            @db.VarChar(200)
+  name_en                 String?           @db.VarChar(200)
+  category                BusinessCategory
+  district                String            @db.VarChar(100)
+  lat                     Decimal           @db.Decimal(10, 7)
+  lng                     Decimal           @db.Decimal(10, 7)
+  description_ar          String?
+  description_en          String?
+  status                  BusinessStatus    @default(pending)
+  verified_at             DateTime?         @db.Timestamptz
+  subscription_tier       SubscriptionTier  @default(free)
+  subscription_expires_at DateTime?         @db.Timestamptz
+  rating_avg              Decimal           @default(0.00) @db.Decimal(3, 2)
+  review_count            Int               @default(0)
+  is_featured             Boolean           @default(false)
+  featured_until          DateTime?         @db.Timestamptz
+  created_at              DateTime          @default(now()) @db.Timestamptz
+
+  // Relations
+  owner                   User              @relation("BusinessOwner", fields: [owner_user_id], references: [id])
+  slots                   Slot[]
+  bookings                Booking[]
+  reviews                 Review[]
+  resources               Resource[]
+  photos                  BusinessPhoto[]
+
+  @@index([district, category, status])
+  @@map("businesses")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: business_photos
+// ─────────────────────────────────────────────────────────────
+
+model BusinessPhoto {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id String    @db.Uuid
+  url         String    // S3/CloudFront URL
+  sort_order  Int       @default(0)
+  created_at  DateTime  @default(now()) @db.Timestamptz
+
+  business    Business  @relation(fields: [business_id], references: [id])
+
+  @@map("business_photos")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: resources (staff, tables, courts, stations, bays)
+// ─────────────────────────────────────────────────────────────
+
+model Resource {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id     String        @db.Uuid
+  type            ResourceType
+  name_ar         String        @db.VarChar(100)
+  name_en         String?       @db.VarChar(100)
+  capacity        Int           @default(1) @db.SmallInt
+  photo_url       String?
+  specialisations String[]      // For salon stylists: ["haircut", "colour", "treatment"]
+  is_active       Boolean       @default(true)
+  created_at      DateTime      @default(now()) @db.Timestamptz
+
+  business        Business      @relation(fields: [business_id], references: [id])
+  slots           Slot[]
+  bookings        Booking[]
+
+  @@index([business_id, type, is_active])
+  @@map("resources")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: slots
+// ─────────────────────────────────────────────────────────────
+
+model Slot {
+  id                        String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id               String      @db.Uuid
+  resource_id               String?     @db.Uuid   // staff/table/court assigned
+  start_time                DateTime    @db.Timestamptz
+  end_time                  DateTime    @db.Timestamptz
+  duration_minutes          Int         @db.SmallInt  // restaurant=90, salon=varies
+  capacity                  Int         @default(1) @db.SmallInt
+  booked_count              Int         @default(0) @db.SmallInt
+  status                    SlotStatus  @default(available)
+  deposit_amount            Decimal     @default(0.00) @db.Decimal(10, 2)
+  cancellation_window_hours Int         @default(24) @db.SmallInt
+
+  // Relations
+  business                  Business    @relation(fields: [business_id], references: [id])
+  resource                  Resource?   @relation(fields: [resource_id], references: [id])
+  bookings                  Booking[]
+
+  @@index([business_id, start_time, status])
+  @@map("slots")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: bookings
+// ─────────────────────────────────────────────────────────────
+
+model Booking {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_ref         String          @unique @db.VarChar(20)  // BK-YYYYMMDD-XXXXX
+  consumer_id         String          @db.Uuid
+  business_id         String          @db.Uuid
+  slot_id             String          @db.Uuid
+  resource_id         String?         @db.Uuid
+  party_size          Int             @default(1) @db.SmallInt
+  occasion            OccasionType?
+  special_requests    String?         @db.VarChar(500)
+  status              BookingStatus   @default(pending_payment)
+  deposit_amount      Decimal         @default(0.00) @db.Decimal(10, 2)
+  platform_fee        Decimal         @default(0.00) @db.Decimal(10, 2)
+  payment_method      PaymentMethod?
+  paymob_order_id     String?         @db.VarChar(100)
+  escrow_status       EscrowStatus    @default(holding)
+  no_show_detected_at DateTime?       @db.Timestamptz
+  completed_at        DateTime?       @db.Timestamptz
+  cancelled_at        DateTime?       @db.Timestamptz
+  cancellation_reason String?         @db.VarChar(100)
+  reschedule_count    Int             @default(0) @db.SmallInt  // max 2 reschedules
+  created_at          DateTime        @default(now()) @db.Timestamptz
+
+  // Relations
+  consumer            User            @relation("ConsumerBookings", fields: [consumer_id], references: [id])
+  business            Business        @relation(fields: [business_id], references: [id])
+  slot                Slot            @relation(fields: [slot_id], references: [id])
+  resource            Resource?       @relation(fields: [resource_id], references: [id])
+  payments            Payment[]
+  review              Review?
+  notifications       Notification[]
+
+  @@index([consumer_id, status])
+  @@index([business_id, status])
+  // No-show detection job index
+  @@index([status, slot_id])
+  @@map("bookings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: payments
+// ─────────────────────────────────────────────────────────────
+
+model Payment {
+  id                      String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_id              String            @db.Uuid
+  type                    PaymentType
+  direction               PaymentDirection
+  amount                  Decimal           @db.Decimal(10, 2)
+  currency                String            @default("EGP") @db.Char(3)
+  paymob_transaction_id   String?           @unique @db.VarChar(100)
+  status                  PaymentStatus     @default(pending)
+  settled_at              DateTime?         @db.Timestamptz
+  recipient_type          RecipientType?
+  recipient_id            String?           @db.Uuid
+  created_at              DateTime          @default(now()) @db.Timestamptz
+
+  // Relations
+  booking                 Booking           @relation(fields: [booking_id], references: [id])
+
+  @@index([booking_id])
+  @@map("payments")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: reviews
+// ─────────────────────────────────────────────────────────────
+
+model Review {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  booking_id    String        @unique @db.Uuid   // one review per booking
+  consumer_id   String        @db.Uuid
+  business_id   String        @db.Uuid           // denormalized for query performance
+  rating        Int           @db.SmallInt       // 1–5, CHECK constraint in migration
+  body          String?       @db.VarChar(1000)
+  status        ReviewStatus  @default(pending)
+  moderated_at  DateTime?     @db.Timestamptz
+  created_at    DateTime      @default(now()) @db.Timestamptz
+
+  // Relations
+  booking       Booking       @relation(fields: [booking_id], references: [id])
+  consumer      User          @relation(fields: [consumer_id], references: [id])
+  business      Business      @relation(fields: [business_id], references: [id])
+
+  @@index([business_id, status])
+  @@map("reviews")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: notifications
+// ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id                  String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipient_id        String                      @db.Uuid
+  recipient_type      NotificationRecipientType
+  booking_id          String?                     @db.Uuid
+  channel             NotificationChannel
+  template_key        String                      @db.VarChar(100)
+  payload             Json
+  status              NotificationStatus          @default(queued)
+  provider_message_id String?                     @db.VarChar(200)
+  scheduled_at        DateTime                    @default(now()) @db.Timestamptz
+  sent_at             DateTime?                   @db.Timestamptz
+  created_at          DateTime                    @default(now()) @db.Timestamptz
+
+  // Relations
+  booking             Booking?                    @relation(fields: [booking_id], references: [id])
+
+  @@index([status, scheduled_at])
+  @@index([booking_id])
+  @@map("notifications")
+}
