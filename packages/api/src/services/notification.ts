@@ -26,7 +26,10 @@ type NotificationTemplate =
   | 'business_cancelled_ar'
   | 'payment_receipt_ar'
   | 'refund_confirmed_ar'
-  | 'payout_failed_ar';
+  | 'payout_failed_ar'
+  | 'dispute_received_ar'
+  | 'dispute_resolved_consumer_ar'
+  | 'dispute_resolved_business_ar';
 
 // ── Enqueue a Notification ───────────────────────────────────
 
@@ -303,6 +306,77 @@ export async function sendCancellationConfirmed(
       refund_eta: depositForfeited ? null : '3–5 أيام عمل',
     },
   });
+}
+
+// ── US-040 / US-041: Dispute Notifications ───────────────────
+
+export async function sendDisputeReceived(
+  db: PrismaClient,
+  bookingId: string
+): Promise<void> {
+  const booking = await db.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { consumer: true, business: true },
+  });
+
+  await enqueueNotification(db, {
+    recipient_id: booking.consumer_id,
+    recipient_type: 'consumer',
+    booking_id: bookingId,
+    channel: 'whatsapp',
+    template_key: 'dispute_received_ar',
+    payload: {
+      booking_ref: booking.booking_ref,
+      business_name_ar: booking.business.name_ar,
+      sla_hours: 72,
+    },
+  });
+}
+
+export async function sendDisputeResolved(
+  db: PrismaClient,
+  bookingId: string,
+  resolution: 'uphold' | 'reverse' | 'partial',
+  refundAmount: number
+): Promise<void> {
+  const booking = await db.booking.findUniqueOrThrow({
+    where: { id: bookingId },
+    include: { consumer: true, business: true },
+  });
+
+  const outcomeAr = resolution === 'uphold'
+    ? 'تم التحقق من الغياب وتأكيد الرسوم.'
+    : resolution === 'reverse'
+    ? 'تم إلغاء الرسوم وسيتم استرداد مبلغ العربون كاملاً.'
+    : `تم البت في النزاع — مبلغ الاسترداد: ${refundAmount} ج.م.`;
+
+  await Promise.all([
+    enqueueNotification(db, {
+      recipient_id: booking.consumer_id,
+      recipient_type: 'consumer',
+      booking_id: bookingId,
+      channel: 'whatsapp',
+      template_key: 'dispute_resolved_consumer_ar',
+      payload: {
+        booking_ref: booking.booking_ref,
+        business_name_ar: booking.business.name_ar,
+        outcome_ar: outcomeAr,
+        refund_amount: refundAmount,
+      },
+    }),
+    enqueueNotification(db, {
+      recipient_id: booking.business_id,
+      recipient_type: 'business',
+      booking_id: bookingId,
+      channel: 'push',
+      template_key: 'dispute_resolved_business_ar',
+      payload: {
+        booking_ref: booking.booking_ref,
+        resolution,
+        outcome_ar: outcomeAr,
+      },
+    }),
+  ]);
 }
 
 export async function sendPayoutFailedAlert(

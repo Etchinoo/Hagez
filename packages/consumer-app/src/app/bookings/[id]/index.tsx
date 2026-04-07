@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Alert, ActivityIndicator, Modal,
+  Alert, ActivityIndicator, Modal, TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -37,6 +37,13 @@ const CANCEL_REASONS = [
   { id: 'other',         label: 'أخرى' },
 ];
 
+const DISPUTE_REASONS = [
+  { id: 'i_was_present',     label: 'كنت موجوداً ولم يُسجَّل حضوري' },
+  { id: 'cancelled_on_time', label: 'ألغيت في الوقت المحدد' },
+  { id: 'business_error',    label: 'خطأ من المكان' },
+  { id: 'other',             label: 'أخرى' },
+];
+
 export default function BookingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -47,6 +54,9 @@ export default function BookingDetailScreen() {
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [rating, setRating] = useState(0);
   const [reviewText, setReviewText] = useState('');
+  const [disputeModalOpen, setDisputeModalOpen] = useState(false);
+  const [disputeReason, setDisputeReason] = useState<string | undefined>();
+  const [disputeDescription, setDisputeDescription] = useState('');
 
   const { data: booking, isLoading } = useQuery({
     queryKey: ['booking', id],
@@ -64,6 +74,20 @@ export default function BookingDetailScreen() {
     },
     onError: (err: any) => {
       Alert.alert('خطأ', err.response?.data?.error?.message_ar ?? 'فشل الإلغاء.');
+    },
+  });
+
+  const disputeMutation = useMutation({
+    mutationFn: () =>
+      bookingApi.submitDispute(id, disputeReason!, disputeDescription || undefined).then((r) => r.data),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['booking', id] });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      setDisputeModalOpen(false);
+      Alert.alert('تم استقبال اعتراضك ✅', data.message_ar ?? 'سيتم مراجعة اعتراضك خلال 72 ساعة.');
+    },
+    onError: (err: any) => {
+      Alert.alert('خطأ', err.response?.data?.error?.message_ar ?? 'فشل تقديم الاعتراض.');
     },
   });
 
@@ -102,6 +126,13 @@ export default function BookingDetailScreen() {
   const isUpcoming = booking.status === 'confirmed';
   const isCompleted = booking.status === 'completed';
   const hasReview = !!booking.review;
+
+  // US-040: Dispute window — 24h from no_show_detected_at
+  const isNoShow = booking.status === 'no_show';
+  const noShowDetectedAt = booking.no_show_detected_at ? new Date(booking.no_show_detected_at).getTime() : null;
+  const disputeWindowOpen = isNoShow && noShowDetectedAt !== null
+    && Date.now() - noShowDetectedAt < 24 * 60 * 60 * 1000;
+  const alreadyDisputed = !!booking.dispute_submitted_at;
 
   // Cancellation window check (client-side pre-check)
   const slotMs = booking.slot?.start_time ? new Date(booking.slot.start_time).getTime() : Infinity;
@@ -195,6 +226,27 @@ export default function BookingDetailScreen() {
           </View>
         )}
 
+        {/* US-040: No-show dispute CTA */}
+        {isNoShow && disputeWindowOpen && !alreadyDisputed && (
+          <TouchableOpacity style={styles.disputeCta} onPress={() => setDisputeModalOpen(true)}>
+            <Ionicons name="flag-outline" size={20} color={ORANGE} />
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={styles.disputeCtaTitle}>اعترض على الغياب</Text>
+              <Text style={styles.disputeCtaSubtitle}>تنتهي مهلة الاعتراض خلال 24 ساعة من رصد الغياب</Text>
+            </View>
+            <Ionicons name="chevron-back" size={16} color={ORANGE} />
+          </TouchableOpacity>
+        )}
+
+        {isNoShow && alreadyDisputed && (
+          <View style={[styles.reviewDone, { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 12 }]}>
+            <Ionicons name="time-outline" size={18} color="#F59E0B" />
+            <Text style={[styles.reviewDoneText, { color: '#F59E0B', marginRight: 8 }]}>
+              اعتراضك قيد المراجعة — سيتم الرد خلال 72 ساعة
+            </Text>
+          </View>
+        )}
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -240,6 +292,66 @@ export default function BookingDetailScreen() {
             >
               <Text style={styles.confirmCancelText}>
                 {cancelMutation.isPending ? 'جاري الإلغاء...' : 'تأكيد الإلغاء'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Dispute modal (US-040) */}
+      <Modal visible={disputeModalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDisputeModalOpen(false)}>
+        <View style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setDisputeModalOpen(false)}>
+              <Text style={styles.modalClose}>إغلاق</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>اعتراض على الغياب</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          <ScrollView style={styles.modalBody}>
+            <View style={[styles.warningBox, { marginBottom: 20 }]}>
+              <Ionicons name="information-circle-outline" size={16} color={ORANGE} />
+              <Text style={styles.warningText}>
+                سيتم مراجعة اعتراضك من فريق العمليات خلال 72 ساعة. ستتوقف أي خصومات حتى صدور القرار.
+              </Text>
+            </View>
+
+            <Text style={styles.cancelReasonTitle}>سبب الاعتراض</Text>
+            {DISPUTE_REASONS.map((r) => (
+              <TouchableOpacity
+                key={r.id}
+                style={[styles.reasonRow, disputeReason === r.id && styles.reasonRowSelected]}
+                onPress={() => setDisputeReason(disputeReason === r.id ? undefined : r.id)}
+              >
+                <Text style={[styles.reasonLabel, disputeReason === r.id && { color: TEAL }]}>{r.label}</Text>
+                {disputeReason === r.id && <Ionicons name="checkmark-circle" size={18} color={TEAL} />}
+              </TouchableOpacity>
+            ))}
+
+            <Text style={[styles.cancelReasonTitle, { marginTop: 16 }]}>تفاصيل إضافية (اختياري)</Text>
+            <TextInput
+              style={styles.disputeInput}
+              value={disputeDescription}
+              onChangeText={(t) => setDisputeDescription(t.slice(0, 300))}
+              placeholder="أخبرنا بما حدث بالتفصيل..."
+              placeholderTextColor={GRAY}
+              multiline
+              textAlign="right"
+              writingDirection="rtl"
+              maxLength={300}
+            />
+            <Text style={[styles.charCount, { textAlign: 'left' }]}>{disputeDescription.length}/300</Text>
+          </ScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={[styles.confirmCancelBtn, { backgroundColor: ORANGE }, !disputeReason && { backgroundColor: GRAY }]}
+              onPress={() => disputeMutation.mutate()}
+              disabled={!disputeReason || disputeMutation.isPending}
+            >
+              <Text style={styles.confirmCancelText}>
+                {disputeMutation.isPending ? 'جاري الإرسال...' : 'تقديم الاعتراض'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -351,4 +463,10 @@ const styles = StyleSheet.create({
   confirmCancelText: { fontFamily: 'Cairo-Bold', fontSize: 17, color: '#fff' },
 
   starsRow: { flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 32, marginBottom: 24 },
+
+  disputeCta: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: '#FFF3E0', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1.5, borderColor: ORANGE + '40' },
+  disputeCtaTitle: { fontFamily: 'Cairo-Bold', fontSize: 15, color: ORANGE },
+  disputeCtaSubtitle: { fontFamily: 'Cairo-Regular', fontSize: 12, color: GRAY, marginTop: 2 },
+  disputeInput: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 12, padding: 14, fontFamily: 'Cairo-Regular', fontSize: 14, color: NAVY, minHeight: 100, textAlignVertical: 'top' },
+  charCount: { fontFamily: 'Cairo-Regular', fontSize: 11, color: GRAY, marginTop: 4 },
 });

@@ -149,4 +149,10 @@ export const bookingApi = {
 
   submitReview: (bookingId: string, rating: number, body?: string) =>
     api.post(`/bookings/${bookingId}/reviews`, { rating, body }),
+
+  submitDispute: (bookingId: string, reason: string, description?: string) =>
+    api.post(`/bookings/${bookingId}/dispute`, { reason, description }),
+
+  getReceipt: (bookingId: string) =>
+    api.get(`/bookings/${bookingId}/receipt`),
 };

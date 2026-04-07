@@ -327,12 +327,15 @@ model Booking {
   payment_method      PaymentMethod?
   paymob_order_id     String?         @db.VarChar(100)
   escrow_status       EscrowStatus    @default(holding)
-  no_show_detected_at DateTime?       @db.Timestamptz
-  completed_at        DateTime?       @db.Timestamptz
-  cancelled_at        DateTime?       @db.Timestamptz
-  cancellation_reason String?         @db.VarChar(100)
-  reschedule_count    Int             @default(0) @db.SmallInt  // max 2 reschedules
-  created_at          DateTime        @default(now()) @db.Timestamptz
+  no_show_detected_at   DateTime?       @db.Timestamptz
+  completed_at          DateTime?       @db.Timestamptz
+  cancelled_at          DateTime?       @db.Timestamptz
+  cancellation_reason   String?         @db.VarChar(100)
+  reschedule_count      Int             @default(0) @db.SmallInt  // max 2 reschedules
+  // US-040: dispute fields
+  dispute_reason        String?         @db.VarChar(500)
+  dispute_submitted_at  DateTime?       @db.Timestamptz
+  created_at            DateTime        @default(now()) @db.Timestamptz
 
   // Relations
   consumer            User            @relation("ConsumerBookings", fields: [consumer_id], references: [id])

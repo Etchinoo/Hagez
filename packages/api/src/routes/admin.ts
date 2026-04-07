@@ -9,6 +9,8 @@
 // ============================================================
 
 import type { FastifyPluginAsync } from 'fastify';
+import { initiateRefund, executeNoShowSplit } from '../services/payment.js';
+import { sendDisputeResolved } from '../services/notification.js';
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // ── GET /admin/businesses/pending ─────────────────────────
@@ -125,7 +127,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // ── POST /admin/disputes/:id/resolve ──────────────────────
+  // ── POST /admin/disputes/:id/resolve (US-041) ─────────────
 
   fastify.post<{
     Params: { id: string };
@@ -137,38 +139,122 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
       const { id } = request.params;
       const { resolution, refund_amount, reason } = request.body;
 
-      const booking = await fastify.db.booking.findUnique({ where: { id } });
+      if (!reason || reason.trim().length < 5) {
+        return reply.code(400).send({
+          error: { code: 'REASON_REQUIRED', message: 'Resolution reason is required (min 5 chars).', message_ar: 'يجب ذكر سبب القرار.' },
+        });
+      }
+
+      const booking = await fastify.db.booking.findUnique({
+        where: { id },
+        include: { payments: true },
+      });
       if (!booking || booking.status !== 'disputed') {
         return reply.code(404).send({
           error: { code: 'DISPUTE_NOT_FOUND', message: 'Dispute not found or already resolved.', message_ar: 'النزاع غير موجود أو تم حله بالفعل.' },
         });
       }
 
-      let newStatus: string;
-      let payoutTriggered = false;
+      const depositAmount = Number(booking.deposit_amount);
+      let actualRefundAmount = 0;
 
       if (resolution === 'uphold') {
-        // Ops upholds the no-show — business keeps the split
-        newStatus = 'no_show';
-        payoutTriggered = true;
+        // No-show stands — execute 75/25 split if not already done
+        const splitDone = booking.payments.some((p) => p.type === 'no_show_penalty');
+        if (!splitDone) {
+          await executeNoShowSplit(fastify.db, id);
+        }
+        await fastify.db.booking.update({
+          where: { id },
+          data: { status: 'no_show', escrow_status: 'split_executed' },
+        });
+
       } else if (resolution === 'reverse') {
-        // Ops reverses the charge — consumer gets full refund
-        newStatus = 'completed';
-        payoutTriggered = true;
+        // Full refund to consumer
+        actualRefundAmount = depositAmount;
+        const depositPayment = booking.payments.find((p) => p.type === 'deposit' && p.status === 'completed');
+        if (depositPayment?.paymob_transaction_id) {
+          await initiateRefund({
+            paymob_transaction_id: depositPayment.paymob_transaction_id,
+            amount_egp: depositAmount,
+          });
+          await fastify.db.payment.create({
+            data: {
+              booking_id: id,
+              type: 'refund',
+              direction: 'outbound',
+              amount: depositAmount,
+              currency: 'EGP',
+              status: 'pending',
+              recipient_type: 'consumer',
+              recipient_id: booking.consumer_id,
+            },
+          });
+        }
+        await fastify.db.booking.update({
+          where: { id },
+          data: { status: 'completed', escrow_status: 'refunded_to_consumer' },
+        });
+
       } else {
-        // Partial — custom refund amount
-        newStatus = 'completed';
-        payoutTriggered = true;
+        // Partial refund — custom amount
+        actualRefundAmount = refund_amount ?? 0;
+        if (actualRefundAmount > 0) {
+          const depositPayment = booking.payments.find((p) => p.type === 'deposit' && p.status === 'completed');
+          if (depositPayment?.paymob_transaction_id) {
+            await initiateRefund({
+              paymob_transaction_id: depositPayment.paymob_transaction_id,
+              amount_egp: actualRefundAmount,
+            });
+            await fastify.db.payment.create({
+              data: {
+                booking_id: id,
+                type: 'refund',
+                direction: 'outbound',
+                amount: actualRefundAmount,
+                currency: 'EGP',
+                status: 'pending',
+                recipient_type: 'consumer',
+                recipient_id: booking.consumer_id,
+              },
+            });
+          }
+          // Business gets remainder via no-show split logic
+          const businessAmount = depositAmount - actualRefundAmount;
+          if (businessAmount > 0) {
+            await fastify.db.payment.create({
+              data: {
+                booking_id: id,
+                type: 'no_show_penalty',
+                direction: 'outbound',
+                amount: businessAmount,
+                currency: 'EGP',
+                status: 'pending',
+                recipient_type: 'business',
+                recipient_id: booking.business_id,
+              },
+            });
+          }
+        }
+        await fastify.db.booking.update({
+          where: { id },
+          data: { status: 'completed', escrow_status: 'split_executed' },
+        });
       }
 
-      await fastify.db.booking.update({
-        where: { id },
-        data: { status: newStatus as any },
+      // US-041: Notify both consumer and business of outcome
+      await sendDisputeResolved(fastify.db, id, resolution, actualRefundAmount).catch((err) =>
+        fastify.log.error(err, 'Failed to send dispute-resolved notifications')
+      );
+
+      fastify.log.info({ booking_id: id, resolution, reason, refund_amount: actualRefundAmount }, 'Dispute resolved by admin');
+
+      return reply.send({
+        dispute_id: id,
+        resolution,
+        refund_amount: actualRefundAmount,
+        message: `Dispute resolved: ${resolution}`,
       });
-
-      fastify.log.info({ booking_id: id, resolution, reason, refund_amount }, 'Dispute resolved by admin');
-
-      return reply.send({ dispute_id: id, resolution, payout_triggered: payoutTriggered });
     }
   );
 

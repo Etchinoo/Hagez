@@ -32,6 +32,7 @@ import {
   scheduleReminders,
   sendPaymentReceipt,
   sendCancellationConfirmed,
+  sendDisputeReceived,
 } from '../services/notification.js';
 import type { JwtAccessPayload } from '../types/index.js';
 
@@ -414,6 +415,79 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return reply.code(201).send({ review_id: review.id, status: 'pending' });
+    }
+  );
+
+  // ── POST /bookings/:id/dispute (US-040) ───────────────────
+  // Consumer challenges a no-show charge within 24 hours.
+
+  fastify.post<{
+    Params: { id: string };
+    Body: { reason: string; description?: string };
+  }>(
+    '/bookings/:id/dispute',
+    { preHandler: fastify.authenticate },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const { reason, description } = request.body;
+
+      if (!reason || reason.trim().length < 3) {
+        return reply.code(400).send({
+          error: { code: 'REASON_REQUIRED', message: 'Dispute reason is required.', message_ar: 'يجب ذكر سبب النزاع.' },
+        });
+      }
+
+      const booking = await fastify.db.booking.findUnique({ where: { id: request.params.id } });
+
+      if (!booking || booking.consumer_id !== user.sub) {
+        return reply.code(404).send({
+          error: { code: 'NOT_FOUND', message: 'Booking not found.', message_ar: 'الحجز غير موجود.' },
+        });
+      }
+
+      if (booking.status !== 'no_show') {
+        return reply.code(409).send({
+          error: { code: 'NOT_NO_SHOW', message: 'Only no-show bookings can be disputed.', message_ar: 'يمكن الاعتراض على حجوزات الغياب فقط.' },
+        });
+      }
+
+      // US-040: 24-hour dispute window from detection time
+      const detectedAt = booking.no_show_detected_at ?? booking.created_at;
+      const windowMs = 24 * 60 * 60 * 1000;
+      if (Date.now() - detectedAt.getTime() > windowMs) {
+        return reply.code(409).send({
+          error: { code: 'DISPUTE_WINDOW_CLOSED', message: 'The 24-hour dispute window has closed.', message_ar: 'انتهت مهلة الاعتراض (24 ساعة).' },
+        });
+      }
+
+      if (booking.dispute_submitted_at) {
+        return reply.code(409).send({
+          error: { code: 'DISPUTE_ALREADY_SUBMITTED', message: 'A dispute has already been submitted for this booking.', message_ar: 'تم تقديم اعتراض مسبق على هذا الحجز.' },
+        });
+      }
+
+      const fullReason = description ? `${reason}: ${description}` : reason;
+
+      await fastify.db.booking.update({
+        where: { id: request.params.id },
+        data: {
+          status: 'disputed',
+          dispute_reason: fullReason,
+          dispute_submitted_at: new Date(),
+          escrow_status: 'holding',  // Pause any pending payouts
+        },
+      });
+
+      // Notify consumer: dispute received, 72h SLA
+      await sendDisputeReceived(fastify.db, request.params.id).catch((err) =>
+        fastify.log.error(err, 'Failed to send dispute-received notification')
+      );
+
+      return reply.code(201).send({
+        booking_ref: booking.booking_ref,
+        status: 'disputed',
+        message_ar: 'تم استقبال اعتراضك. سيتم مراجعته خلال 72 ساعة وإشعارك بالنتيجة.',
+      });
     }
   );
 
