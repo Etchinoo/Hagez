@@ -22,6 +22,13 @@ datasource db {
 // ENUMS
 // ─────────────────────────────────────────────────────────────
 
+enum UserRole {
+  consumer
+  business_owner
+  admin
+  super_admin
+}
+
 enum UserStatus {
   active
   suspended
@@ -165,11 +172,18 @@ model User {
   full_name           String      @db.VarChar(100)
   language_pref       String      @default("ar") @db.Char(2)
   profile_photo_url   String?
+  role                UserRole    @default(consumer)
   status              UserStatus  @default(active)
   no_show_count       Int         @default(0) @db.SmallInt
   deposit_mandatory   Boolean     @default(false)
   fcm_token           String?     // Firebase push token — updated on app open
   paymob_card_token   String?     @db.VarChar(200) // US-031: tokenised card for no-show protection
+  // US-046: notification opt-outs
+  notify_whatsapp     Boolean     @default(true)
+  notify_push         Boolean     @default(true)
+  // US-067: social login (Apple Sign-In / Google)
+  social_id           String?     @db.VarChar(255)
+  social_provider     String?     @db.VarChar(20)
   created_at          DateTime    @default(now()) @db.Timestamptz
   updated_at          DateTime    @updatedAt @db.Timestamptz
 
@@ -227,6 +241,10 @@ model Business {
   // US-036: payout preference
   payout_method                   String            @default("paymob_wallet") @db.VarChar(30) // "bank_transfer" | "paymob_wallet"
   payout_threshold_egp            Decimal           @default(50.00) @db.Decimal(10, 2)
+  // US-049: business notification preferences
+  notify_new_booking_push         Boolean           @default(true)
+  notify_cancellation_push        Boolean           @default(true)
+  notify_payout_whatsapp          Boolean           @default(true)
   created_at                      DateTime          @default(now()) @db.Timestamptz
 
   // Relations
@@ -236,6 +254,8 @@ model Business {
   reviews                         Review[]
   resources                       Resource[]
   photos                          BusinessPhoto[]
+  services                        BusinessService[]
+  sections                        BusinessSection[]
 
   @@index([district, category, status])
   @@map("businesses")
@@ -279,6 +299,45 @@ model Resource {
 
   @@index([business_id, type, is_active])
   @@map("resources")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: business_services (US-058 — salon/restaurant menu)
+// ─────────────────────────────────────────────────────────────
+
+model BusinessService {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id   String    @db.Uuid
+  name_ar       String    @db.VarChar(200)
+  name_en       String?   @db.VarChar(200)
+  price_egp     Decimal   @db.Decimal(10, 2)
+  duration_min  Int       @db.SmallInt
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now()) @db.Timestamptz
+
+  business      Business  @relation(fields: [business_id], references: [id])
+
+  @@index([business_id, is_active])
+  @@map("business_services")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: business_sections (US-060 — restaurant indoor/outdoor)
+// ─────────────────────────────────────────────────────────────
+
+model BusinessSection {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id   String    @db.Uuid
+  name_ar       String    @db.VarChar(100)
+  name_en       String?   @db.VarChar(100)
+  capacity      Int       @db.SmallInt
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now()) @db.Timestamptz
+
+  business      Business  @relation(fields: [business_id], references: [id])
+
+  @@index([business_id, is_active])
+  @@map("business_sections")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -335,6 +394,8 @@ model Booking {
   // US-040: dispute fields
   dispute_reason        String?         @db.VarChar(500)
   dispute_submitted_at  DateTime?       @db.Timestamptz
+  // US-055: business internal notes (not visible to consumer)
+  internal_notes        String?         @db.VarChar(1000)
   created_at            DateTime        @default(now()) @db.Timestamptz
 
   // Relations

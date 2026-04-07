@@ -11,6 +11,27 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding dev database...');
 
+  // ── Seed admin users (EP-09) ───────────────────────────────
+  // Phones are read from env to avoid hard-coding credentials.
+  // Default to dev placeholders so seed works without .env.
+  const adminPhone      = process.env.ADMIN_PHONE      ?? '+201099900001';
+  const superAdminPhone = process.env.SUPER_ADMIN_PHONE ?? '+201099900002';
+
+  await prisma.user.upsert({
+    where: { phone: adminPhone },
+    update: { role: 'admin' },
+    create: { phone: adminPhone, full_name: 'Ops Admin', language_pref: 'ar', role: 'admin' },
+  });
+
+  await prisma.user.upsert({
+    where: { phone: superAdminPhone },
+    update: { role: 'super_admin' },
+    create: { phone: superAdminPhone, full_name: 'Super Admin', language_pref: 'ar', role: 'super_admin' },
+  });
+
+  console.log(`   Admin:       ${adminPhone}`);
+  console.log(`   Super Admin: ${superAdminPhone}`);
+
   // ── Seed user (business owner) ─────────────────────────────
   const owner = await prisma.user.upsert({
     where: { phone: '+201000000001' },

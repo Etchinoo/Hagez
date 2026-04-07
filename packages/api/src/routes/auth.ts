@@ -19,8 +19,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { phone } = request.body;
 
-      // Generate 6-digit OTP
-      const otp = Array.from({ length: env.OTP_LENGTH }, () => Math.floor(Math.random() * 10)).join('');
+      // TODO: Replace with real random OTP when SMS (Twilio/360dialog) is integrated
+      const otp = '1111';
       const otpHash = await bcrypt.hash(otp, 10);
       const expiresAt = new Date(Date.now() + env.OTP_EXPIRY_SECONDS * 1000);
 
@@ -74,6 +74,67 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       if (!user) {
         user = await fastify.db.user.create({
           data: { phone, full_name: phone, language_pref: 'ar' },
+        });
+      }
+
+      const accessToken = fastify.jwt.sign(
+        { sub: user.id, phone: user.phone, role: user.role },
+        { expiresIn: env.JWT_ACCESS_EXPIRY }
+      );
+      const refreshToken = fastify.jwt.sign(
+        { sub: user.id, phone: user.phone, role: user.role },
+        { expiresIn: env.JWT_REFRESH_EXPIRY }
+      );
+
+      return reply.send({ access_token: accessToken, refresh_token: refreshToken, user });
+    }
+  );
+
+  // ── POST /auth/social ─────────────────────────────────────
+  // US-067: Apple Sign-In (provider='apple') and Google (provider='google').
+  // Accepts the identity token returned by the native SDK.
+  // TODO: In production, verify token signature using Apple/Google JWKS endpoints.
+  // For dev, the JWT payload is decoded without signature verification.
+
+  fastify.post<{ Body: { provider: 'apple' | 'google'; token: string } }>(
+    '/auth/social',
+    async (request, reply) => {
+      const { provider, token } = request.body;
+
+      // Decode JWT payload (base64url) — no signature check in dev
+      let payload: Record<string, unknown>;
+      try {
+        const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+      } catch {
+        return reply.code(400).send({
+          error: { code: 'INVALID_SOCIAL_TOKEN', message: 'Could not decode identity token.' },
+        });
+      }
+
+      const socialId = payload.sub as string;
+      const email    = payload.email as string | undefined;
+
+      if (!socialId) {
+        return reply.code(400).send({
+          error: { code: 'INVALID_SOCIAL_TOKEN', message: 'Identity token missing sub claim.' },
+        });
+      }
+
+      // Find or create user keyed by social_id + provider
+      let user = await fastify.db.user.findFirst({
+        where: { social_id: socialId, social_provider: provider },
+      });
+
+      if (!user) {
+        user = await fastify.db.user.create({
+          data: {
+            phone: `${provider}:${socialId}`,
+            full_name: email ?? socialId,
+            language_pref: 'ar',
+            social_id: socialId,
+            social_provider: provider,
+          },
         });
       }
 

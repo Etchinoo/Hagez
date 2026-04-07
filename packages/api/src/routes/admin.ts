@@ -258,6 +258,117 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
+  // ── GET /admin/bookings/search (US-073 support) ──────────
+  // Search bookings by ref number or consumer phone for manual refund lookup.
+
+  fastify.get<{ Querystring: { q: string } }>(
+    '/admin/bookings/search',
+    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    async (request, reply) => {
+      const { q } = request.query;
+      if (!q || q.trim().length < 3) {
+        return reply.code(400).send({
+          error: { code: 'QUERY_TOO_SHORT', message: 'Search query must be at least 3 characters.' },
+        });
+      }
+
+      const booking = await fastify.db.booking.findFirst({
+        where: {
+          OR: [
+            { booking_ref: q.trim().toUpperCase() },
+            { consumer: { phone: q.trim() } },
+          ],
+        },
+        include: {
+          consumer: { select: { full_name: true, phone: true } },
+          business: { select: { name_ar: true } },
+          payments: { orderBy: { created_at: 'asc' } },
+        },
+      });
+
+      if (!booking) {
+        return reply.code(404).send({
+          error: { code: 'BOOKING_NOT_FOUND', message: 'No booking found for this reference or phone.', message_ar: 'لم يتم العثور على الحجز.' },
+        });
+      }
+
+      return reply.send({ booking });
+    }
+  );
+
+  // ── POST /admin/refunds (US-073) ─────────────────────────
+  // Manual refund execution. Amounts > 500 EGP require super_admin role.
+
+  fastify.post<{
+    Body: { booking_id: string; amount_egp: number; reason: string };
+  }>(
+    '/admin/refunds',
+    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    async (request, reply) => {
+      const { booking_id, amount_egp, reason } = request.body;
+      const actor = request.user as { sub: string; role: string; phone: string };
+
+      if (!reason || reason.trim().length < 5) {
+        return reply.code(400).send({
+          error: { code: 'REASON_REQUIRED', message: 'Refund reason is required (min 5 chars).', message_ar: 'يجب ذكر سبب الاسترداد.' },
+        });
+      }
+
+      if (amount_egp <= 0) {
+        return reply.code(400).send({
+          error: { code: 'INVALID_AMOUNT', message: 'Refund amount must be greater than 0.', message_ar: 'يجب أن يكون مبلغ الاسترداد أكبر من صفر.' },
+        });
+      }
+
+      // Refunds above 500 EGP require super_admin
+      if (amount_egp > 500 && actor.role !== 'super_admin') {
+        return reply.code(403).send({
+          error: { code: 'SUPER_ADMIN_REQUIRED', message: 'Refunds above 500 EGP require super admin approval.', message_ar: 'استرداد المبالغ فوق 500 جنيه يستلزم موافقة المشرف الأعلى.' },
+        });
+      }
+
+      const booking = await fastify.db.booking.findUnique({
+        where: { id: booking_id },
+        include: { payments: true },
+      });
+
+      if (!booking) {
+        return reply.code(404).send({
+          error: { code: 'BOOKING_NOT_FOUND', message: 'Booking not found.', message_ar: 'الحجز غير موجود.' },
+        });
+      }
+
+      const depositPayment = booking.payments.find((p) => p.type === 'deposit' && p.status === 'completed');
+      if (!depositPayment?.paymob_transaction_id) {
+        return reply.code(422).send({
+          error: { code: 'NO_COMPLETED_PAYMENT', message: 'No completed deposit payment found for this booking.', message_ar: 'لا يوجد دفع مكتمل لهذا الحجز.' },
+        });
+      }
+
+      await initiateRefund({
+        paymob_transaction_id: depositPayment.paymob_transaction_id,
+        amount_egp,
+      });
+
+      await fastify.db.payment.create({
+        data: {
+          booking_id,
+          type: 'refund',
+          direction: 'outbound',
+          amount: amount_egp,
+          currency: 'EGP',
+          status: 'pending',
+          recipient_type: 'consumer',
+          recipient_id: booking.consumer_id,
+        },
+      });
+
+      fastify.log.info({ booking_id, amount_egp, reason, admin: actor.phone }, 'Manual refund executed by admin');
+
+      return reply.send({ booking_id, refund_amount: amount_egp, status: 'pending' });
+    }
+  );
+
   // ── GET /admin/health ──────────────────────────────────────
 
   fastify.get(
