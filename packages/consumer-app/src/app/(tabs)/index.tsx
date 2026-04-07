@@ -144,7 +144,7 @@ export default function HomeScreen() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['businesses', selectedCategory, selectedDistrict],
     queryFn: () =>
       searchApi.searchBusinesses({
@@ -154,6 +154,8 @@ export default function HomeScreen() {
         limit: 20,
       }).then((r) => r.data),
   });
+
+  const isOffline = isError && ((error as any)?.code === 'ERR_NETWORK' || (error as any)?.message === 'Network Error');
 
   // US-015: last 5 businesses from completed bookings
   const { data: recentData } = useQuery({
@@ -265,6 +267,15 @@ export default function HomeScreen() {
             <BusinessCardSkeleton />
             <BusinessCardSkeleton />
           </>
+        ) : isOffline ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>📡</Text>
+            <Text style={styles.emptyText}>لا يوجد اتصال بالإنترنت</Text>
+            <Text style={styles.emptySubtext}>تحقق من اتصالك وحاول مرة أخرى</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={() => refetch()}>
+              <Text style={styles.retryBtnText}>إعادة المحاولة</Text>
+            </TouchableOpacity>
+          </View>
         ) : nearby.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>لا توجد نتائج</Text>
@@ -333,6 +344,9 @@ const styles = StyleSheet.create({
 
   // Empty
   emptyState: { alignItems: 'center', paddingVertical: 40 },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyText: { fontFamily: 'Cairo-Bold', fontSize: 16, color: NAVY },
   emptySubtext: { fontFamily: 'Cairo-Regular', fontSize: 14, color: '#888', marginTop: 8 },
+  retryBtn: { marginTop: 16, backgroundColor: TEAL, borderRadius: 12, paddingHorizontal: 28, paddingVertical: 10 },
+  retryBtnText: { fontFamily: 'Cairo-SemiBold', fontSize: 14, color: '#fff' },
 });

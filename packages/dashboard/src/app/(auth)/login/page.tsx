@@ -80,10 +80,10 @@ export default function BusinessLoginPage() {
               style={{ ...styles.input, textAlign: 'center', letterSpacing: '12px', fontSize: '24px' }}
               type="text"
               inputMode="numeric"
-              maxLength={6}
+              maxLength={4}
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
-              placeholder="000000"
+              placeholder="1111"
               autoFocus
             />
             {error && <p style={styles.error}>{error}</p>}

@@ -102,6 +102,8 @@ export const userApi = {
 export const authApi = {
   requestOtp: (phone: string) => api.post('/auth/otp/request', { phone }),
   verifyOtp: (phone: string, otp: string) => api.post('/auth/otp/verify', { phone, otp }),
+  socialLogin: (provider: 'apple' | 'google', token: string) =>
+    api.post('/auth/social', { provider, token }),
   logout: () => api.post('/auth/logout'),
 };
 

@@ -282,12 +282,14 @@ export default function SearchScreen() {
     limit: 30,
   };
 
-  const { data: searchData, isLoading } = useQuery({
+  const { data: searchData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['search', debouncedQuery, filters],
     queryFn: () =>
       searchApi.searchBusinesses({ ...searchParams, q: debouncedQuery || undefined }).then((r) => r.data),
     enabled: debouncedQuery.length >= 2 || activeFilterCount > 0,
   });
+
+  const isOffline = isError && ((error as any)?.code === 'ERR_NETWORK' || (error as any)?.message === 'Network Error');
 
   const results = searchData?.businesses ?? [];
 
@@ -360,6 +362,15 @@ export default function SearchScreen() {
         <ScrollView contentContainerStyle={styles.list}>
           {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
         </ScrollView>
+      ) : isOffline ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>📡</Text>
+          <Text style={styles.emptyTitle}>لا يوجد اتصال بالإنترنت</Text>
+          <Text style={styles.emptySubtitle}>تحقق من اتصالك وحاول مرة أخرى</Text>
+          <TouchableOpacity onPress={() => refetch()} style={styles.clearFiltersBtn}>
+            <Text style={styles.clearFiltersText}>إعادة المحاولة</Text>
+          </TouchableOpacity>
+        </View>
       ) : results.length === 0 && (debouncedQuery.length >= 2 || activeFilterCount > 0) ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🔍</Text>

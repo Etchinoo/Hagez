@@ -107,20 +107,22 @@ export async function sendBookingConfirmation(
     },
   });
 
-  // Push to business dashboard
-  await enqueueNotification(db, {
-    recipient_id: booking.business_id,
-    recipient_type: 'business',
-    booking_id: bookingId,
-    channel: 'push',
-    template_key: 'new_booking_business',
-    payload: {
-      consumer_name: booking.consumer.full_name,
-      party_size: booking.party_size,
-      occasion: booking.occasion ?? undefined,
-      booking_ref: booking.booking_ref,
-    },
-  });
+  // Push to business dashboard — respect US-049 opt-out
+  if (booking.business.notify_new_booking_push) {
+    await enqueueNotification(db, {
+      recipient_id: booking.business_id,
+      recipient_type: 'business',
+      booking_id: bookingId,
+      channel: 'push',
+      template_key: 'new_booking_business',
+      payload: {
+        consumer_name: booking.consumer.full_name,
+        party_size: booking.party_size,
+        occasion: booking.occasion ?? undefined,
+        booking_ref: booking.booking_ref,
+      },
+    });
+  }
 }
 
 // ── Schedule Reminders (called at booking confirmation) ──────
@@ -134,43 +136,50 @@ export async function scheduleReminders(
     include: { consumer: true, business: true, slot: true },
   });
 
+  // US-046: respect consumer notification opt-outs
+  const { notify_whatsapp, notify_push } = booking.consumer;
+
   const slotStart = booking.slot.start_time;
 
-  // 24h WhatsApp reminder
-  const reminder24h = new Date(slotStart.getTime() - 24 * 60 * 60 * 1000);
-  if (reminder24h > new Date()) {
-    await enqueueNotification(db, {
-      recipient_id: booking.consumer_id,
-      recipient_type: 'consumer',
-      booking_id: bookingId,
-      channel: 'whatsapp',
-      template_key: 'reminder_24h_ar',
-      payload: {
-        business_name_ar: booking.business.name_ar,
-        datetime_ar: formatDatetimeAr(slotStart),
-        reschedule_link: `https://app.reservr.eg/bookings/${booking.id}/reschedule`,
-        cancel_link: `https://app.reservr.eg/bookings/${booking.id}/cancel`,
-      },
-      scheduled_at: reminder24h,
-    });
+  // 24h WhatsApp reminder — only if consumer opted in
+  if (notify_whatsapp) {
+    const reminder24h = new Date(slotStart.getTime() - 24 * 60 * 60 * 1000);
+    if (reminder24h > new Date()) {
+      await enqueueNotification(db, {
+        recipient_id: booking.consumer_id,
+        recipient_type: 'consumer',
+        booking_id: bookingId,
+        channel: 'whatsapp',
+        template_key: 'reminder_24h_ar',
+        payload: {
+          business_name_ar: booking.business.name_ar,
+          datetime_ar: formatDatetimeAr(slotStart),
+          reschedule_link: `https://app.reservr.eg/bookings/${booking.id}/reschedule`,
+          cancel_link: `https://app.reservr.eg/bookings/${booking.id}/cancel`,
+        },
+        scheduled_at: reminder24h,
+      });
+    }
   }
 
-  // 2h push reminder
-  const reminder2h = new Date(slotStart.getTime() - 2 * 60 * 60 * 1000);
-  if (reminder2h > new Date()) {
-    await enqueueNotification(db, {
-      recipient_id: booking.consumer_id,
-      recipient_type: 'consumer',
-      booking_id: bookingId,
-      channel: 'push',
-      template_key: 'reminder_2h_push',
-      payload: {
-        business_name_ar: booking.business.name_ar,
-        time_ar: formatTimeAr(slotStart),
-        maps_link: `https://maps.google.com/?q=${booking.business.lat},${booking.business.lng}`,
-      },
-      scheduled_at: reminder2h,
-    });
+  // 2h push reminder — only if consumer opted in
+  if (notify_push) {
+    const reminder2h = new Date(slotStart.getTime() - 2 * 60 * 60 * 1000);
+    if (reminder2h > new Date()) {
+      await enqueueNotification(db, {
+        recipient_id: booking.consumer_id,
+        recipient_type: 'consumer',
+        booking_id: bookingId,
+        channel: 'push',
+        template_key: 'reminder_2h_push',
+        payload: {
+          business_name_ar: booking.business.name_ar,
+          time_ar: formatTimeAr(slotStart),
+          maps_link: `https://maps.google.com/?q=${booking.business.lat},${booking.business.lng}`,
+        },
+        scheduled_at: reminder2h,
+      });
+    }
   }
 }
 

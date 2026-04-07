@@ -3,16 +3,17 @@
 // Tab 1: Availability rules (slot generation)
 // Tab 2: Deposit & cancellation policy (US-033)
 // Tab 3: Payout preferences (US-036)
+// Tab 4: Notification preferences (US-049)
 // ============================================================
 
 'use client';
 
 import { useState, useEffect } from 'react';
-import { slotsApi, businessApi } from '@/services/api';
+import { slotsApi, businessApi, sectionsApi } from '@/services/api';
 
 const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
-type Tab = 'availability' | 'policy' | 'payout';
+type Tab = 'availability' | 'policy' | 'payout' | 'notifications' | 'sections';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('availability');
@@ -24,9 +25,11 @@ export default function SettingsPage() {
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '28px', borderBottom: '2px solid #E5E7EB', paddingBottom: '0' }}>
         {([
-          { key: 'availability', label: 'أوقات العمل' },
-          { key: 'policy',       label: 'سياسة العربون والإلغاء' },
-          { key: 'payout',       label: 'إعدادات المدفوعات' },
+          { key: 'availability',  label: 'أوقات العمل' },
+          { key: 'policy',        label: 'سياسة العربون والإلغاء' },
+          { key: 'payout',        label: 'إعدادات المدفوعات' },
+          { key: 'notifications', label: 'إشعارات' },
+          { key: 'sections',      label: 'الأقسام (قاعة)' },
         ] as { key: Tab; label: string }[]).map((tab) => (
           <button
             key={tab.key}
@@ -44,9 +47,11 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {activeTab === 'availability' && <AvailabilityTab />}
-      {activeTab === 'policy'       && <PolicyTab />}
-      {activeTab === 'payout'       && <PayoutTab />}
+      {activeTab === 'availability'  && <AvailabilityTab />}
+      {activeTab === 'policy'        && <PolicyTab />}
+      {activeTab === 'payout'        && <PayoutTab />}
+      {activeTab === 'notifications' && <NotificationsTab />}
+      {activeTab === 'sections'      && <SectionsTab />}
     </div>
   );
 }
@@ -352,6 +357,232 @@ function PayoutTab() {
       <div style={{ marginTop: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
         <button onClick={handleSave} disabled={saving} style={saveButtonStyle(saving)}>
           {saving ? 'جاري الحفظ...' : 'حفظ إعدادات الاستلام'}
+        </button>
+        {success && <span style={{ color: '#1B8A7A', fontSize: '15px' }}>✅ تم الحفظ بنجاح</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab 5: Sections Config (US-060) — Restaurant only ─────────
+
+function SectionsTab() {
+  const [sections, setSections] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name_ar: '', name_en: '', capacity: 10 });
+
+  useEffect(() => {
+    sectionsApi.list().then((r) => {
+      setSections(r.data.sections ?? []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const handleAdd = async () => {
+    if (!form.name_ar.trim()) return;
+    setSaving(true);
+    try {
+      const res = await sectionsApi.create(form);
+      setSections((s) => [...s, res.data]);
+      setForm({ name_ar: '', name_en: '', capacity: 10 });
+      setShowForm(false);
+    } catch {
+      alert('فشل الإضافة. حاول مرة أخرى.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggle = async (id: string, is_active: boolean) => {
+    await sectionsApi.update(id, { is_active });
+    setSections((s) => s.map((sec) => sec.id === id ? { ...sec, is_active } : sec));
+  };
+
+  const active = sections.filter((s) => s.is_active);
+  const inactive = sections.filter((s) => !s.is_active);
+
+  return (
+    <div>
+      <p style={{ color: '#6B7280', fontSize: '14px', marginBottom: '24px' }}>
+        أضف أقسام قاعتك (داخلي، خارجي، VIP...) لتمكين تفضيلات الحجز.
+      </p>
+
+      {/* Add form */}
+      {showForm ? (
+        <div style={sectionCard}>
+          <h3 style={sectionTitle}>قسم جديد</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', alignItems: 'flex-end' }}>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: '6px' }}>الاسم بالعربية *</label>
+              <input style={inputStyle} value={form.name_ar} onChange={(e) => setForm((f) => ({ ...f, name_ar: e.target.value }))} placeholder="داخلي" />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#6B7280', display: 'block', marginBottom: '6px' }}>السعة (عدد الأشخاص)</label>
+              <input type="number" min={1} max={500} style={{ ...inputStyle, width: '100px' }} value={form.capacity} onChange={(e) => setForm((f) => ({ ...f, capacity: Number(e.target.value) }))} />
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => setShowForm(false)} style={{ ...saveButtonStyle(false), background: '#6B7280', padding: '10px 16px', fontSize: '14px' }}>إلغاء</button>
+              <button onClick={handleAdd} disabled={saving} style={{ ...saveButtonStyle(saving), padding: '10px 16px', fontSize: '14px' }}>إضافة</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setShowForm(true)} style={{ ...saveButtonStyle(false), marginBottom: '20px' }}>+ إضافة قسم</button>
+      )}
+
+      {/* Active sections */}
+      {loading ? (
+        <div style={{ color: '#6B7280', fontSize: '14px' }}>جاري التحميل...</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {active.map((sec) => (
+            <div key={sec.id} style={{ ...sectionCard, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 }}>
+              <button onClick={() => handleToggle(sec.id, false)} style={{ padding: '6px 12px', background: '#FEF2F2', border: 'none', borderRadius: '8px', fontFamily: 'Cairo, sans-serif', fontSize: '13px', color: '#D32F2F', cursor: 'pointer' }}>تعطيل</button>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: 700, fontSize: '15px', color: '#0F2044' }}>{sec.name_ar}</div>
+                <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>سعة {sec.capacity} شخص</div>
+              </div>
+            </div>
+          ))}
+          {inactive.map((sec) => (
+            <div key={sec.id} style={{ ...sectionCard, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0, opacity: 0.5 }}>
+              <button onClick={() => handleToggle(sec.id, true)} style={{ padding: '6px 12px', background: '#E8F5F3', border: 'none', borderRadius: '8px', fontFamily: 'Cairo, sans-serif', fontSize: '13px', color: '#1B8A7A', cursor: 'pointer' }}>تفعيل</button>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: 600, fontSize: '15px', color: '#0F2044' }}>{sec.name_ar} (معطّل)</div>
+                <div style={{ fontSize: '12px', color: '#6B7280' }}>سعة {sec.capacity} شخص</div>
+              </div>
+            </div>
+          ))}
+          {active.length === 0 && !showForm && (
+            <p style={{ color: '#9CA3AF', fontSize: '14px', textAlign: 'center', padding: '32px' }}>لم تضف أقساماً بعد</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab 4: Notification Preferences (US-049) ─────────────────
+
+function NotificationsTab() {
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [prefs, setPrefs] = useState({
+    notify_new_booking_push: true,
+    notify_cancellation_push: true,
+    notify_payout_whatsapp: true,
+  });
+
+  useEffect(() => {
+    businessApi.getPolicy().then((r) => {
+      if (r.data) {
+        setPrefs({
+          notify_new_booking_push: r.data.notify_new_booking_push ?? true,
+          notify_cancellation_push: r.data.notify_cancellation_push ?? true,
+          notify_payout_whatsapp: r.data.notify_payout_whatsapp ?? true,
+        });
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await businessApi.updatePolicy(prefs);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch {
+      alert('فشل الحفظ. حاول مرة أخرى.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleItems: { key: keyof typeof prefs; title: string; subtitle: string; channel: string }[] = [
+    {
+      key: 'notify_new_booking_push',
+      title: 'إشعار حجز جديد',
+      subtitle: 'إشعار فوري على لوحة التحكم عند وصول حجز جديد',
+      channel: 'Push',
+    },
+    {
+      key: 'notify_cancellation_push',
+      title: 'إشعار الإلغاء',
+      subtitle: 'إشعار فوري عند إلغاء أحد العملاء لحجزه',
+      channel: 'Push',
+    },
+    {
+      key: 'notify_payout_whatsapp',
+      title: 'إشعار التحويل المالي',
+      subtitle: 'رسالة واتساب عند إرسال مستحقاتك أو في حالة فشل التحويل',
+      channel: 'WhatsApp',
+    },
+  ];
+
+  return (
+    <div>
+      <p style={{ color: '#6B7280', fontSize: '14px', marginBottom: '24px' }}>
+        تحكم في الإشعارات التي تتلقاها عبر التطبيق وواتساب.
+      </p>
+
+      <div style={sectionCard}>
+        <h3 style={sectionTitle}>إعدادات الإشعارات</h3>
+        {toggleItems.map((item, i) => (
+          <div
+            key={item.key}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingTop: i === 0 ? 0 : '16px',
+              paddingBottom: '16px',
+              borderBottom: i < toggleItems.length - 1 ? '1px solid #F0F0F0' : 'none',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {/* Toggle switch */}
+              <div
+                onClick={() => setPrefs((p) => ({ ...p, [item.key]: !p[item.key] }))}
+                style={{
+                  width: '48px', height: '28px', borderRadius: '14px', cursor: 'pointer',
+                  backgroundColor: prefs[item.key] ? '#1B8A7A' : '#D1D5DB',
+                  position: 'relative', transition: 'background 0.2s',
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{
+                  position: 'absolute',
+                  top: '3px',
+                  left: prefs[item.key] ? '22px' : '3px',
+                  width: '22px', height: '22px', borderRadius: '50%',
+                  backgroundColor: '#fff',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  transition: 'left 0.2s',
+                }} />
+              </div>
+              <span
+                style={{
+                  fontSize: '12px', fontWeight: 700,
+                  color: item.channel === 'WhatsApp' ? '#25D366' : '#1B8A7A',
+                  backgroundColor: item.channel === 'WhatsApp' ? '#E8F9EE' : '#E8F5F3',
+                  padding: '2px 8px', borderRadius: '12px',
+                }}
+              >
+                {item.channel}
+              </span>
+            </div>
+            <div style={{ textAlign: 'right', flex: 1, marginRight: '16px' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', color: '#0F2044' }}>{item.title}</div>
+              <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>{item.subtitle}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <button onClick={handleSave} disabled={saving} style={saveButtonStyle(saving)}>
+          {saving ? 'جاري الحفظ...' : 'حفظ إعدادات الإشعارات'}
         </button>
         {success && <span style={{ color: '#1B8A7A', fontSize: '15px' }}>✅ تم الحفظ بنجاح</span>}
       </div>

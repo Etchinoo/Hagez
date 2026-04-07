@@ -22,6 +22,7 @@ interface AuthState {
 
   // Actions
   loginWithOtp: (phone: string, otp: string) => Promise<void>;
+  loginWithSocial: (provider: 'apple' | 'google', token: string) => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: AuthUser) => void;
   initialize: () => Promise<void>;
@@ -55,6 +56,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     await tokenStorage.setTokens(access_token, refresh_token);
     // user returned from /auth/otp/verify may have full_name = phone on first login.
     // Fetch full profile to ensure store is up to date.
+    try {
+      const profileRes = await usersApi.getMe();
+      set({ user: profileRes.data, isAuthenticated: true });
+    } catch {
+      set({ user, isAuthenticated: true });
+    }
+  },
+
+  loginWithSocial: async (provider, token) => {
+    const res = await authApi.socialLogin(provider, token);
+    const { access_token, refresh_token, user } = res.data;
+    await tokenStorage.setTokens(access_token, refresh_token);
     try {
       const profileRes = await usersApi.getMe();
       set({ user: profileRes.data, isAuthenticated: true });

@@ -20,6 +20,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { searchApi } from '../../../services/api';
+import { toArabic } from '../../../utils/numerals';
 
 const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
@@ -176,8 +177,8 @@ export default function BusinessProfileScreen() {
             ) : (
               <View style={styles.ratingBlock}>
                 <Ionicons name="star" size={14} color="#F59E0B" />
-                <Text style={styles.ratingText}>{Number(data.rating_avg).toFixed(1)}</Text>
-                <Text style={styles.reviewCount}>({data.review_count})</Text>
+                <Text style={styles.ratingText}>{toArabic(Number(data.rating_avg).toFixed(1))}</Text>
+                <Text style={styles.reviewCount}>({toArabic(data.review_count)})</Text>
               </View>
             )}
           </View>

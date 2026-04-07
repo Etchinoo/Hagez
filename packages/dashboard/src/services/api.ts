@@ -87,7 +87,7 @@ export const slotsApi = {
     dashboardApi.patch(`/business/slots/${id}/block`, { reason }),
 };
 
-// ── Business Policy (US-033, US-036) ─────────────────────────
+// ── Business Policy (US-033, US-036, US-049) ──────────────────
 
 export const businessApi = {
   getPolicy: () => dashboardApi.get('/business/policy'),
@@ -97,12 +97,55 @@ export const businessApi = {
     cancellation_window_hours?: number;
     payout_method?: 'bank_transfer' | 'paymob_wallet';
     payout_threshold_egp?: number;
+    // US-049: notification preferences
+    notify_new_booking_push?: boolean;
+    notify_cancellation_push?: boolean;
+    notify_payout_whatsapp?: boolean;
   }) => dashboardApi.put('/business/policy', data),
 };
 
-// ── Analytics ────────────────────────────────────────────────
+// ── Analytics (US-054) ───────────────────────────────────────
 
 export const analyticsApi = {
   summary: (month?: string) =>
     dashboardApi.get('/business/analytics/summary', { params: { month } }),
+  trend: (days?: number) =>
+    dashboardApi.get('/business/analytics/trend', { params: { days } }),
+};
+
+// ── Staff Management (US-057) ────────────────────────────────
+
+export const staffApi = {
+  list: () => dashboardApi.get('/business/staff'),
+  create: (data: { name_ar: string; name_en?: string; specialisations?: string[]; photo_url?: string }) =>
+    dashboardApi.post('/business/staff', data),
+  update: (id: string, data: { name_ar?: string; name_en?: string; specialisations?: string[]; is_active?: boolean }) =>
+    dashboardApi.patch(`/business/staff/${id}`, data),
+};
+
+// ── Service Menu (US-058) ────────────────────────────────────
+
+export const servicesApi = {
+  list: () => dashboardApi.get('/business/services'),
+  create: (data: { name_ar: string; name_en?: string; price_egp: number; duration_min: number }) =>
+    dashboardApi.post('/business/services', data),
+  update: (id: string, data: { name_ar?: string; price_egp?: number; duration_min?: number; is_active?: boolean }) =>
+    dashboardApi.patch(`/business/services/${id}`, data),
+};
+
+// ── Sections (US-060) ────────────────────────────────────────
+
+export const sectionsApi = {
+  list: () => dashboardApi.get('/business/sections'),
+  create: (data: { name_ar: string; name_en?: string; capacity: number }) =>
+    dashboardApi.post('/business/sections', data),
+  update: (id: string, data: { name_ar?: string; capacity?: number; is_active?: boolean }) =>
+    dashboardApi.patch(`/business/sections/${id}`, data),
+};
+
+// ── Booking Notes (US-055) ───────────────────────────────────
+
+export const bookingNotesApi = {
+  save: (bookingId: string, internal_notes: string) =>
+    dashboardApi.patch(`/business/bookings/${bookingId}/notes`, { internal_notes }),
 };

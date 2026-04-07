@@ -1,17 +1,47 @@
 // ============================================================
 // SUPER RESERVATION PLATFORM — Profile / Account Screen
-// Shows user name, phone, language toggle, logout.
+// Shows user name, phone, language toggle, notification prefs, logout.
 // Allows editing full_name via PATCH /users/me.
+// US-046: WhatsApp / push notification opt-out toggles.
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, ScrollView,
+  Animated, Alert, ScrollView, Switch,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { usersApi } from '../../services/api';
+import { usersApi, api } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
+
+function ProfileSkeleton() {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  const Sk = ({ w, h, mb = 8, br = 8 }: { w: string | number; h: number; mb?: number; br?: number }) => (
+    <Animated.View style={{ backgroundColor: '#E5E7EB', borderRadius: br, width: w, height: h, marginBottom: mb, opacity }} />
+  );
+  return (
+    <View style={{ flex: 1, backgroundColor: '#F7F8FA' }}>
+      <View style={{ paddingHorizontal: 24, paddingTop: 60, paddingBottom: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' }}>
+        <Sk w={100} h={24} />
+      </View>
+      <View style={{ alignItems: 'center', paddingVertical: 32, backgroundColor: '#fff', marginBottom: 16 }}>
+        <Sk w={80} h={80} mb={12} br={40} />
+        <Sk w={120} h={16} />
+      </View>
+      <Sk w="100%" h={70} mb={12} br={0} />
+      <Sk w="100%" h={70} mb={12} br={0} />
+      <Sk w="100%" h={110} mb={0} br={0} />
+    </View>
+  );
+}
 
 export default function ProfileScreen() {
   const logout = useAuthStore((s) => s.logout);
@@ -34,6 +64,18 @@ export default function ProfileScreen() {
     },
     onError: () => {
       Alert.alert('خطأ', 'فشل التحديث. حاول مرة أخرى.');
+    },
+  });
+
+  // US-046: notification preferences mutation
+  const notifPrefMutation = useMutation({
+    mutationFn: (prefs: { notify_whatsapp?: boolean; notify_push?: boolean }) =>
+      api.patch('/users/me/notification-prefs', prefs),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['me'] });
+    },
+    onError: () => {
+      Alert.alert('خطأ', 'فشل حفظ إعدادات الإشعارات.');
     },
   });
 
@@ -66,13 +108,7 @@ export default function ProfileScreen() {
     updateMutation.mutate({ language_pref: newLang });
   };
 
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={TEAL} size="large" />
-      </View>
-    );
-  }
+  if (isLoading) return <ProfileSkeleton />;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -80,6 +116,20 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>حسابي</Text>
       </View>
+
+      {/* US-065: Profile incomplete banner */}
+      {user?.full_name === user?.phone && (
+        <TouchableOpacity
+          style={styles.incompleteBanner}
+          onPress={() => { setNameInput(user?.phone ?? ''); setEditingName(true); }}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.incompleteBannerText}>
+            ⚠️ أكمل ملفك الشخصي — أضف اسمك الكامل
+          </Text>
+          <Text style={styles.incompleteBannerCta}>تعديل ›</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Avatar placeholder */}
       <View style={styles.avatarSection}>
@@ -144,6 +194,47 @@ export default function ProfileScreen() {
             {user?.language_pref === 'ar' ? 'العربية 🇪🇬' : 'English 🇺🇸'}
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* US-046: Notification preferences */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>الإشعارات</Text>
+
+        <View style={styles.toggleRow}>
+          <Switch
+            value={user?.notify_whatsapp ?? true}
+            onValueChange={(val) => notifPrefMutation.mutate({ notify_whatsapp: val })}
+            trackColor={{ false: '#D1D5DB', true: TEAL }}
+            thumbColor="#fff"
+            disabled={notifPrefMutation.isPending}
+          />
+          <View style={styles.toggleLabel}>
+            <Text style={styles.toggleTitle}>رسائل واتساب</Text>
+            <Text style={styles.toggleSubtitle}>تأكيد الحجز، التذكيرات، والإشعارات المهمة</Text>
+          </View>
+        </View>
+
+        <View style={[styles.toggleRow, styles.toggleRowBorder]}>
+          <Switch
+            value={user?.notify_push ?? true}
+            onValueChange={(val) => notifPrefMutation.mutate({ notify_push: val })}
+            trackColor={{ false: '#D1D5DB', true: TEAL }}
+            thumbColor="#fff"
+            disabled={notifPrefMutation.isPending}
+          />
+          <View style={styles.toggleLabel}>
+            <Text style={styles.toggleTitle}>إشعارات التطبيق</Text>
+            <Text style={styles.toggleSubtitle}>تذكير قبل ساعتين وتحديثات الحجز</Text>
+          </View>
+        </View>
+
+        {!(user?.notify_whatsapp ?? true) && (
+          <View style={styles.optOutWarning}>
+            <Text style={styles.optOutWarningText}>
+              ⚠️ تعطيل واتساب يعني عدم تلقي تأكيدات الحجز — يُنصح بإبقائه مفعلاً.
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* No-show warning (if applicable) */}
@@ -244,6 +335,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveButtonText: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: '#fff' },
+  // Notification toggles
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 14,
+  },
+  toggleRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  toggleLabel: { flex: 1, alignItems: 'flex-end' },
+  toggleTitle: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: NAVY, textAlign: 'right' },
+  toggleSubtitle: { fontFamily: 'Cairo-Regular', fontSize: 12, color: '#888', textAlign: 'right', marginTop: 2 },
+  optOutWarning: {
+    backgroundColor: '#FFF8E1',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
+  },
+  optOutWarningText: { fontFamily: 'Cairo-Regular', fontSize: 12, color: '#92400E', textAlign: 'right' },
   warningBox: {
     marginHorizontal: 16,
     marginBottom: 12,
@@ -254,6 +368,18 @@ const styles = StyleSheet.create({
     borderLeftColor: '#F59E0B',
   },
   warningText: { fontFamily: 'Cairo-Regular', fontSize: 14, color: '#92400E', textAlign: 'right' },
+  incompleteBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFF8E1',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FDE68A',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  incompleteBannerText: { fontFamily: 'Cairo-SemiBold', fontSize: 14, color: '#92400E', flex: 1, textAlign: 'right' },
+  incompleteBannerCta: { fontFamily: 'Cairo-Bold', fontSize: 14, color: '#D97706', marginLeft: 8 },
   logoutButton: {
     marginHorizontal: 16,
     marginTop: 8,

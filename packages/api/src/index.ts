@@ -24,6 +24,8 @@ import adminRoutes from './routes/admin.js';
 
 import { startNoShowDetectionJob, startSlotHoldExpiryJob } from './jobs/no-show-detection.js';
 import { startDailyPayoutJob } from './jobs/payout.js';
+import { startDailySummaryJob } from './jobs/daily-summary.js';
+import { startNotificationWorker } from './workers/notification-worker.js';
 
 const fastify = Fastify({
   logger:
@@ -130,7 +132,9 @@ async function start() {
     const db = app.db;
     startNoShowDetectionJob(db);
     startSlotHoldExpiryJob(db);
-    startDailyPayoutJob(db);   // US-036: 23:00 Africa/Cairo
+    startDailyPayoutJob(db);           // US-036: 23:00 Africa/Cairo
+    startDailySummaryJob(db);          // US-059: 09:00 Africa/Cairo daily email
+    startNotificationWorker(db);       // US-050: SQS notification delivery worker
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);

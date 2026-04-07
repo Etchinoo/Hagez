@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { authApi } from '../../services/api';
 import { useAuthStore } from '../../store/auth';
 
@@ -17,6 +18,7 @@ type Step = 'phone' | 'otp';
 export default function LoginScreen() {
   const router = useRouter();
   const loginWithOtp = useAuthStore((s) => s.loginWithOtp);
+  const loginWithSocial = useAuthStore((s) => s.loginWithSocial);
 
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
@@ -44,9 +46,31 @@ export default function LoginScreen() {
     }
   };
 
+  const handleAppleSignIn = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) throw new Error('No identity token');
+      await loginWithSocial('apple', credential.identityToken);
+      router.replace('/(tabs)');
+    } catch (e: any) {
+      if (e.code !== 'ERR_REQUEST_CANCELED') {
+        setError('فشل تسجيل الدخول بـ Apple. حاول مرة أخرى.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleVerifyOtp = async () => {
-    if (otp.length !== 6) {
-      setError('أدخل الكود المكون من 6 أرقام');
+    if (otp.length !== 4) {
+      setError('أدخل الكود المكون من 4 أرقام');
       return;
     }
 
@@ -90,6 +114,24 @@ export default function LoginScreen() {
             <TouchableOpacity style={styles.button} onPress={handleRequestOtp} disabled={loading}>
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>إرسال الكود</Text>}
             </TouchableOpacity>
+
+            {/* US-067: Apple Sign-In — iOS only, required by App Store */}
+            {Platform.OS === 'ios' && (
+              <>
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>أو</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={12}
+                  style={styles.appleBtn}
+                  onPress={handleAppleSignIn}
+                />
+              </>
+            )}
           </>
         ) : (
           <>
@@ -100,9 +142,9 @@ export default function LoginScreen() {
               style={[styles.input, styles.otpInput]}
               value={otp}
               onChangeText={setOtp}
-              placeholder="000000"
+              placeholder="1111"
               keyboardType="number-pad"
-              maxLength={6}
+              maxLength={4}
               textAlign="center"
             />
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -146,4 +188,8 @@ const styles = StyleSheet.create({
   },
   buttonText: { fontFamily: 'Cairo-Bold', fontSize: 18, color: '#fff' },
   backLink: { fontFamily: 'Cairo-Regular', fontSize: 14, color: TEAL, textAlign: 'center', marginTop: 16, paddingVertical: 12 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 16, gap: 10 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#E0E0E0' },
+  dividerText: { fontFamily: 'Cairo-Regular', fontSize: 13, color: '#999' },
+  appleBtn: { width: '100%', height: 54 },
 });

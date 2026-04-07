@@ -350,10 +350,15 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.put<{
     Body: {
-      deposit_type: 'fixed' | 'percentage';
-      deposit_value: number;
-      cancellation_window_hours: number;
+      deposit_type?: 'fixed' | 'percentage';
+      deposit_value?: number;
+      cancellation_window_hours?: number;
       payout_method?: 'bank_transfer' | 'paymob_wallet';
+      payout_threshold_egp?: number;
+      // US-049: notification preferences
+      notify_new_booking_push?: boolean;
+      notify_cancellation_push?: boolean;
+      notify_payout_whatsapp?: boolean;
     };
   }>(
     '/business/policy',
@@ -363,42 +368,58 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       const business = await getAuthenticatedBusiness(user.sub);
       if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
 
-      const { deposit_type, deposit_value, cancellation_window_hours, payout_method } = request.body;
+      const {
+        deposit_type, deposit_value, cancellation_window_hours, payout_method, payout_threshold_egp,
+        notify_new_booking_push, notify_cancellation_push, notify_payout_whatsapp,
+      } = request.body;
 
-      if (!['fixed', 'percentage'].includes(deposit_type)) {
+      if (deposit_type !== undefined && !['fixed', 'percentage'].includes(deposit_type)) {
         return reply.code(400).send({ error: { code: 'INVALID_DEPOSIT_TYPE', message: 'deposit_type must be "fixed" or "percentage".', message_ar: 'نوع العربون يجب أن يكون "fixed" أو "percentage".' } });
       }
-      if (deposit_type === 'percentage' && (deposit_value < 0 || deposit_value > 100)) {
+      if (deposit_type === 'percentage' && deposit_value !== undefined && (deposit_value < 0 || deposit_value > 100)) {
         return reply.code(400).send({ error: { code: 'INVALID_DEPOSIT_VALUE', message: 'Percentage must be 0–100.', message_ar: 'النسبة المئوية يجب أن تكون بين 0 و 100.' } });
       }
-      if (cancellation_window_hours < 0 || cancellation_window_hours > 168) {
+      if (cancellation_window_hours !== undefined && (cancellation_window_hours < 0 || cancellation_window_hours > 168)) {
         return reply.code(400).send({ error: { code: 'INVALID_WINDOW', message: 'Cancellation window must be 0–168 hours.', message_ar: 'نافذة الإلغاء يجب أن تكون بين 0 و 168 ساعة.' } });
       }
 
       const updated = await fastify.db.business.update({
         where: { id: business.id },
         data: {
-          policy_deposit_type: deposit_type,
-          policy_deposit_value: deposit_value,
-          policy_cancellation_window_hours: cancellation_window_hours,
-          ...(payout_method ? { payout_method } : {}),
+          ...(deposit_type !== undefined ? { policy_deposit_type: deposit_type } : {}),
+          ...(deposit_value !== undefined ? { policy_deposit_value: deposit_value } : {}),
+          ...(cancellation_window_hours !== undefined ? { policy_cancellation_window_hours: cancellation_window_hours } : {}),
+          ...(payout_method !== undefined ? { payout_method } : {}),
+          ...(payout_threshold_egp !== undefined ? { payout_threshold_egp } : {}),
+          ...(notify_new_booking_push !== undefined ? { notify_new_booking_push } : {}),
+          ...(notify_cancellation_push !== undefined ? { notify_cancellation_push } : {}),
+          ...(notify_payout_whatsapp !== undefined ? { notify_payout_whatsapp } : {}),
         },
         select: {
           policy_deposit_type: true,
           policy_deposit_value: true,
           policy_cancellation_window_hours: true,
           payout_method: true,
+          payout_threshold_egp: true,
+          notify_new_booking_push: true,
+          notify_cancellation_push: true,
+          notify_payout_whatsapp: true,
         },
       });
 
       return reply.send({
-        ...updated,
-        policy_deposit_value: Number(updated.policy_deposit_value),
-        // Consumer-facing preview of the policy (Arabic)
+        deposit_type: updated.policy_deposit_type,
+        deposit_value: Number(updated.policy_deposit_value),
+        cancellation_window_hours: updated.policy_cancellation_window_hours,
+        payout_method: updated.payout_method,
+        payout_threshold_egp: Number(updated.payout_threshold_egp),
+        notify_new_booking_push: updated.notify_new_booking_push,
+        notify_cancellation_push: updated.notify_cancellation_push,
+        notify_payout_whatsapp: updated.notify_payout_whatsapp,
         policy_preview_ar: buildPolicyPreviewAr(
-          deposit_type,
+          updated.policy_deposit_type,
           Number(updated.policy_deposit_value),
-          cancellation_window_hours
+          updated.policy_cancellation_window_hours
         ),
       });
     }
@@ -420,6 +441,9 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
         cancellation_window_hours: business.policy_cancellation_window_hours,
         payout_method: business.payout_method,
         payout_threshold_egp: Number(business.payout_threshold_egp),
+        notify_new_booking_push: business.notify_new_booking_push,
+        notify_cancellation_push: business.notify_cancellation_push,
+        notify_payout_whatsapp: business.notify_payout_whatsapp,
         policy_preview_ar: buildPolicyPreviewAr(
           business.policy_deposit_type,
           Number(business.policy_deposit_value),
@@ -428,6 +452,320 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
   );
+
+  // ── PATCH /business/bookings/:id/notes (US-055) ───────────
+  // Business owner adds/updates internal notes on a booking.
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: { internal_notes: string };
+  }>(
+    '/business/bookings/:id/notes',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const booking = await fastify.db.booking.findUnique({ where: { id: request.params.id } });
+      if (!booking || booking.business_id !== business.id) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Booking not found.', message_ar: 'الحجز غير موجود.' } });
+      }
+
+      const updated = await fastify.db.booking.update({
+        where: { id: request.params.id },
+        data: { internal_notes: request.body.internal_notes?.slice(0, 1000) ?? null },
+        select: { id: true, internal_notes: true },
+      });
+
+      return reply.send(updated);
+    }
+  );
+
+  // ── GET /business/staff (US-057) ──────────────────────────
+  // Lists all staff members (Resources with type=staff).
+
+  fastify.get(
+    '/business/staff',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const staff = await fastify.db.resource.findMany({
+        where: { business_id: business.id, type: 'staff' },
+        orderBy: { created_at: 'asc' },
+      });
+
+      return reply.send({ staff });
+    }
+  );
+
+  // ── POST /business/staff (US-057) ─────────────────────────
+
+  fastify.post<{
+    Body: { name_ar: string; name_en?: string; specialisations?: string[]; photo_url?: string };
+  }>(
+    '/business/staff',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const { name_ar, name_en, specialisations = [], photo_url } = request.body;
+      if (!name_ar || name_ar.trim().length < 2) {
+        return reply.code(400).send({ error: { code: 'INVALID_NAME', message: 'Staff name is required.', message_ar: 'اسم الموظف مطلوب.' } });
+      }
+
+      const staff = await fastify.db.resource.create({
+        data: {
+          business_id: business.id,
+          type: 'staff',
+          name_ar: name_ar.trim(),
+          name_en: name_en?.trim() ?? null,
+          specialisations,
+          photo_url: photo_url ?? null,
+          capacity: 1,
+        },
+      });
+
+      return reply.code(201).send(staff);
+    }
+  );
+
+  // ── PATCH /business/staff/:id (US-057) ────────────────────
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: { name_ar?: string; name_en?: string; specialisations?: string[]; photo_url?: string; is_active?: boolean };
+  }>(
+    '/business/staff/:id',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const resource = await fastify.db.resource.findUnique({ where: { id: request.params.id } });
+      if (!resource || resource.business_id !== business.id || resource.type !== 'staff') {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Staff member not found.', message_ar: 'الموظف غير موجود.' } });
+      }
+
+      const { name_ar, name_en, specialisations, photo_url, is_active } = request.body;
+      const updated = await fastify.db.resource.update({
+        where: { id: request.params.id },
+        data: {
+          ...(name_ar ? { name_ar } : {}),
+          ...(name_en !== undefined ? { name_en } : {}),
+          ...(specialisations !== undefined ? { specialisations } : {}),
+          ...(photo_url !== undefined ? { photo_url } : {}),
+          ...(is_active !== undefined ? { is_active } : {}),
+        },
+      });
+
+      return reply.send(updated);
+    }
+  );
+
+  // ── GET /business/services (US-058) ───────────────────────
+
+  fastify.get(
+    '/business/services',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const services = await fastify.db.businessService.findMany({
+        where: { business_id: business.id },
+        orderBy: { created_at: 'asc' },
+      });
+
+      return reply.send({ services });
+    }
+  );
+
+  // ── POST /business/services (US-058) ──────────────────────
+
+  fastify.post<{
+    Body: { name_ar: string; name_en?: string; price_egp: number; duration_min: number };
+  }>(
+    '/business/services',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const { name_ar, name_en, price_egp, duration_min } = request.body;
+      if (!name_ar || name_ar.trim().length < 2) {
+        return reply.code(400).send({ error: { code: 'INVALID_NAME', message: 'Service name is required.', message_ar: 'اسم الخدمة مطلوب.' } });
+      }
+
+      const service = await fastify.db.businessService.create({
+        data: {
+          business_id: business.id,
+          name_ar: name_ar.trim(),
+          name_en: name_en?.trim() ?? null,
+          price_egp,
+          duration_min,
+        },
+      });
+
+      return reply.code(201).send(service);
+    }
+  );
+
+  // ── PATCH /business/services/:id (US-058) ─────────────────
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: { name_ar?: string; name_en?: string; price_egp?: number; duration_min?: number; is_active?: boolean };
+  }>(
+    '/business/services/:id',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const service = await fastify.db.businessService.findUnique({ where: { id: request.params.id } });
+      if (!service || service.business_id !== business.id) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Service not found.', message_ar: 'الخدمة غير موجودة.' } });
+      }
+
+      const { name_ar, name_en, price_egp, duration_min, is_active } = request.body;
+      const updated = await fastify.db.businessService.update({
+        where: { id: request.params.id },
+        data: {
+          ...(name_ar ? { name_ar } : {}),
+          ...(name_en !== undefined ? { name_en } : {}),
+          ...(price_egp !== undefined ? { price_egp } : {}),
+          ...(duration_min !== undefined ? { duration_min } : {}),
+          ...(is_active !== undefined ? { is_active } : {}),
+        },
+      });
+
+      return reply.send(updated);
+    }
+  );
+
+  // ── GET /business/sections (US-060) ───────────────────────
+
+  fastify.get(
+    '/business/sections',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const sections = await fastify.db.businessSection.findMany({
+        where: { business_id: business.id },
+        orderBy: { created_at: 'asc' },
+      });
+
+      return reply.send({ sections });
+    }
+  );
+
+  // ── POST /business/sections (US-060) ──────────────────────
+
+  fastify.post<{
+    Body: { name_ar: string; name_en?: string; capacity: number };
+  }>(
+    '/business/sections',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const { name_ar, name_en, capacity } = request.body;
+      const section = await fastify.db.businessSection.create({
+        data: { business_id: business.id, name_ar, name_en: name_en ?? null, capacity },
+      });
+
+      return reply.code(201).send(section);
+    }
+  );
+
+  // ── PATCH /business/sections/:id (US-060) ─────────────────
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: { name_ar?: string; name_en?: string; capacity?: number; is_active?: boolean };
+  }>(
+    '/business/sections/:id',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const section = await fastify.db.businessSection.findUnique({ where: { id: request.params.id } });
+      if (!section || section.business_id !== business.id) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Section not found.', message_ar: 'القسم غير موجود.' } });
+      }
+
+      const updated = await fastify.db.businessSection.update({
+        where: { id: request.params.id },
+        data: request.body,
+      });
+
+      return reply.send(updated);
+    }
+  );
+
+  // ── GET /business/analytics/trend (US-054) ────────────────
+  // 30-day daily booking counts for trend chart.
+
+  fastify.get<{ Querystring: { days?: string } }>(
+    '/business/analytics/trend',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const days = Math.min(parseInt(request.query.days ?? '30'), 90);
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const bookings = await fastify.db.booking.findMany({
+        where: {
+          business_id: business.id,
+          created_at: { gte: since },
+          status: { notIn: ['expired'] },
+        },
+        select: { created_at: true, status: true, deposit_amount: true },
+        orderBy: { created_at: 'asc' },
+      });
+
+      // Bucket by date
+      const buckets: Record<string, { date: string; bookings: number; revenue: number }> = {};
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const key = d.toISOString().slice(0, 10);
+        buckets[key] = { date: key, bookings: 0, revenue: 0 };
+      }
+
+      for (const b of bookings) {
+        const key = b.created_at.toISOString().slice(0, 10);
+        if (buckets[key]) {
+          buckets[key].bookings++;
+          if (b.status === 'completed' || b.status === 'no_show') {
+            buckets[key].revenue += Number(b.deposit_amount);
+          }
+        }
+      }
+
+      return reply.send({ days, trend: Object.values(buckets) });
+    }
+  );
+
 };
 
 // ── Helper: Build Arabic policy preview string ─────────────

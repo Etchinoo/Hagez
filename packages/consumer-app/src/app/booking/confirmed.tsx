@@ -10,6 +10,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../services/api';
+import { toArabic } from '../../utils/numerals';
 
 const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
@@ -70,7 +71,7 @@ export default function BookingConfirmedScreen() {
           <DetailRow icon="calendar-outline" label="الموعد" value={slotTime} />
         )}
         {data?.party_size && (
-          <DetailRow icon="people-outline" label="عدد الأشخاص" value={`${data.party_size} أشخاص`} />
+          <DetailRow icon="people-outline" label="عدد الأشخاص" value={`${toArabic(data.party_size)} أشخاص`} />
         )}
         {data?.business?.district && (
           <DetailRow icon="location-outline" label="المنطقة" value={data.business.district} />

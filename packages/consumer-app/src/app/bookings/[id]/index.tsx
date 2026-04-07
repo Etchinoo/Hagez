@@ -4,21 +4,50 @@
 // review CTA for completed bookings.
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Alert, ActivityIndicator, Modal, TextInput,
+  Alert, Animated, Modal, TextInput, Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../../services/api';
+import { toArabic } from '../../../utils/numerals';
 
 const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
 const ORANGE = '#D4622A';
 const GRAY = '#9CA3AF';
 const RED = '#D32F2F';
+
+// ── Skeleton ──────────────────────────────────────────────────
+
+function BookingDetailSkeleton() {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  const Sk = ({ w, h, mb = 8 }: { w: string | number; h: number; mb?: number }) => (
+    <Animated.View style={{ backgroundColor: '#E5E7EB', borderRadius: 6, width: w, height: h, marginBottom: mb, opacity }} />
+  );
+  return (
+    <View style={{ flex: 1, backgroundColor: '#F7F8FA', padding: 20, paddingTop: 12 }}>
+      <Sk w="100%" h={44} mb={16} />
+      <Sk w="100%" h={90} mb={16} />
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Sk key={i} w="100%" h={44} mb={8} />
+      ))}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   confirmed:             { label: 'مؤكد',              color: TEAL,   bg: '#E8F5F3' },
@@ -64,6 +93,19 @@ export default function BookingDetailScreen() {
     enabled: !!id,
   });
 
+  async function handleShare() {
+    if (!booking) return;
+    const slotTimeStr = booking.slot?.start_time
+      ? new Date(booking.slot.start_time).toLocaleString('ar-EG', {
+          weekday: 'long', day: 'numeric', month: 'long',
+          hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo',
+        })
+      : '';
+    await Share.share({
+      message: `حجزت في ${booking.business?.name_ar ?? ''} 🎉\nرقم الحجز: ${booking.booking_ref}\nالموعد: ${slotTimeStr}`,
+    });
+  }
+
   const cancelMutation = useMutation({
     mutationFn: () => bookingApi.cancelBooking(id, selectedReason).then((r) => r.data),
     onSuccess: (data) => {
@@ -104,7 +146,7 @@ export default function BookingDetailScreen() {
   });
 
   if (isLoading) {
-    return <View style={styles.loading}><ActivityIndicator color={TEAL} size="large" /></View>;
+    return <BookingDetailSkeleton />;
   }
 
   if (!booking) {
@@ -146,7 +188,9 @@ export default function BookingDetailScreen() {
           <Ionicons name="chevron-forward" size={22} color={NAVY} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>تفاصيل الحجز</Text>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity onPress={handleShare} style={styles.backBtn}>
+          <Ionicons name="share-outline" size={22} color={TEAL} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
@@ -166,7 +210,7 @@ export default function BookingDetailScreen() {
           <DetailRow icon="storefront-outline" label="المكان" value={booking.business?.name_ar ?? ''} />
           <DetailRow icon="location-outline" label="المنطقة" value={booking.business?.district ?? ''} />
           <DetailRow icon="calendar-outline" label="الموعد" value={slotTime} />
-          <DetailRow icon="people-outline" label="عدد الأشخاص" value={`${booking.party_size} أشخاص`} />
+          <DetailRow icon="people-outline" label="عدد الأشخاص" value={`${toArabic(booking.party_size)} أشخاص`} />
           <DetailRow icon="card-outline" label="العربون" value={`${Number(booking.deposit_amount)} ج.م`} />
           <DetailRow icon="receipt-outline" label="رسوم الخدمة" value={`${Number(booking.platform_fee)} ج.م`} />
         </View>

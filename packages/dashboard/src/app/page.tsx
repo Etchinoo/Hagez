@@ -9,15 +9,18 @@
 import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import BookingCalendar from '@/components/BookingCalendar';
+import OnboardingChecklist from '@/components/OnboardingChecklist';
 import { useDashboardAuth } from '@/store/auth';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const queryClient = new QueryClient();
 
 const NAV_ITEMS = [
-  { href: '/', label: 'الحجوزات', icon: '📅' },
+  { href: '/',          label: 'الحجوزات',   icon: '📅' },
   { href: '/analytics', label: 'الإحصائيات', icon: '📊' },
-  { href: '/settings', label: 'الإعدادات', icon: '⚙️' },
+  { href: '/staff',     label: 'الموظفون',   icon: '👤' },
+  { href: '/services',  label: 'الخدمات',    icon: '✂️' },
+  { href: '/settings',  label: 'الإعدادات',  icon: '⚙️' },
 ];
 
 export default function DashboardPage() {
@@ -73,6 +76,17 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
+        {/* Multi-Branch Upsell (US-061) — shows for free/starter */}
+        {sidebarOpen && (
+          <div style={styles.upsellBox}>
+            <div style={styles.upsellTitle}>تعدد الفروع</div>
+            <div style={styles.upsellDesc}>أضف فروعاً متعددة بترقية Growth</div>
+            <button style={styles.upsellBtn} onClick={() => alert('للترقية، تواصل مع فريق Super Reservation')}>
+              ترقية الباقة
+            </button>
+          </div>
+        )}
+
         {/* User + Logout */}
         <div style={styles.sidebarFooter}>
           {sidebarOpen && user && (
@@ -101,7 +115,10 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Page Content */}
-        <div style={styles.pageContent}>{children}</div>
+        <div style={styles.pageContent}>
+          <OnboardingChecklist />
+          {children}
+        </div>
       </main>
     </div>
   );
@@ -162,5 +179,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '10px 20px', background: '#1B8A7A', border: 'none', borderRadius: '10px',
     fontFamily: 'Cairo, sans-serif', fontSize: '14px', fontWeight: 700, color: '#fff', cursor: 'pointer',
   },
-  pageContent: { flex: 1, overflow: 'auto' },
+  pageContent: { flex: 1, overflow: 'auto', padding: '16px', display: 'flex', flexDirection: 'column' },
+  upsellBox: {
+    margin: '0 8px 8px', padding: '12px', background: 'rgba(27,138,122,0.12)',
+    borderRadius: '10px', border: '1px solid rgba(27,138,122,0.3)',
+  },
+  upsellTitle: { fontFamily: 'Cairo, sans-serif', fontWeight: 700, fontSize: '13px', color: '#fff', marginBottom: '4px' },
+  upsellDesc: { fontFamily: 'Cairo, sans-serif', fontSize: '11px', color: 'rgba(255,255,255,0.6)', marginBottom: '8px' },
+  upsellBtn: { width: '100%', padding: '6px', background: '#1B8A7A', border: 'none', borderRadius: '6px', fontFamily: 'Cairo, sans-serif', fontSize: '12px', fontWeight: 700, color: '#fff', cursor: 'pointer' },
 };

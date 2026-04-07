@@ -3,11 +3,43 @@
 // Shows upcoming + past bookings. Manage, cancel, review.
 // ============================================================
 
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { bookingApi } from '../../services/api';
+import { toArabic } from '../../utils/numerals';
+
+// ── Skeleton ──────────────────────────────────────────────────
+
+function BookingCardSkeleton() {
+  const opacity = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return (
+    <Animated.View style={[styles.card, { opacity }]}>
+      <View style={styles.skRow}>
+        <View style={[styles.sk, { width: 80, height: 14 }]} />
+        <View style={[styles.sk, { width: 60, height: 12 }]} />
+      </View>
+      <View style={[styles.sk, { width: '65%', height: 20, marginBottom: 6, alignSelf: 'flex-end' }]} />
+      <View style={[styles.sk, { width: '40%', height: 13, alignSelf: 'flex-end' }]} />
+      <View style={[styles.sk, { width: '80%', height: 13, marginTop: 16, alignSelf: 'flex-end' }]} />
+    </Animated.View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+
+function isNetworkError(err: unknown): boolean {
+  return (err as any)?.code === 'ERR_NETWORK' || (err as any)?.message === 'Network Error';
+}
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   confirmed:             { label: 'مؤكد ✅', color: '#1B8A7A' },
@@ -26,7 +58,7 @@ export default function MyBookingsScreen() {
   const upcomingStatuses = ['confirmed', 'pending_payment'];
   const pastStatuses = ['completed', 'cancelled_by_consumer', 'cancelled_by_business', 'no_show'];
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['bookings', tab],
     queryFn: () => bookingApi.listBookings().then((r) => r.data),
   });
@@ -94,7 +126,20 @@ export default function MyBookingsScreen() {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color="#1B8A7A" style={{ marginTop: 40 }} />
+        <View style={styles.list}>
+          <BookingCardSkeleton />
+          <BookingCardSkeleton />
+          <BookingCardSkeleton />
+        </View>
+      ) : isError && isNetworkError(error) ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyEmoji}>📡</Text>
+          <Text style={styles.emptyText}>لا يوجد اتصال بالإنترنت</Text>
+          <Text style={styles.emptySubtext}>تحقق من اتصالك وحاول مرة أخرى</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => refetch()}>
+            <Text style={styles.retryBtnText}>إعادة المحاولة</Text>
+          </TouchableOpacity>
+        </View>
       ) : bookings.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyEmoji}>📋</Text>
@@ -142,4 +187,9 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48, marginBottom: 16 },
   emptyText: { fontFamily: 'Cairo-Bold', fontSize: 18, color: NAVY },
   emptySubtext: { fontFamily: 'Cairo-Regular', fontSize: 14, color: '#888', marginTop: 8 },
+  retryBtn: { marginTop: 20, backgroundColor: TEAL, borderRadius: 12, paddingHorizontal: 28, paddingVertical: 12 },
+  retryBtnText: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: '#fff' },
+  // Skeleton
+  sk: { backgroundColor: '#E5E7EB', borderRadius: 6, marginBottom: 4 },
+  skRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 10 },
 });

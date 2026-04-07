@@ -1,9 +1,10 @@
 // ============================================================
 // SUPER RESERVATION PLATFORM — User Profile Routes
-// GET  /users/me                   — fetch authenticated user's profile
-// PATCH /users/me                  — update full_name, language_pref
-// POST  /users/me/payment-token    — US-031: save Paymob card token
-// DELETE /users/me/payment-token   — US-031: remove saved card
+// GET  /users/me                          — fetch profile
+// PATCH /users/me                         — update full_name, language_pref
+// POST  /users/me/payment-token           — US-031: save Paymob card token
+// DELETE /users/me/payment-token          — US-031: remove saved card
+// PATCH /users/me/notification-prefs      — US-046: update opt-outs
 // ============================================================
 
 import type { FastifyPluginAsync } from 'fastify';
@@ -29,6 +30,8 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
           profile_photo_url: true,
           no_show_count: true,
           deposit_mandatory: true,
+          notify_whatsapp: true,
+          notify_push: true,
           status: true,
           created_at: true,
         },
@@ -134,6 +137,37 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
       });
 
       return reply.send({ card_on_file: false, message_ar: 'تم إزالة البطاقة المحفوظة.' });
+    }
+  );
+
+  // ── PATCH /users/me/notification-prefs (US-046) ────────────
+  // Consumer updates WhatsApp / push notification opt-outs.
+
+  fastify.patch<{
+    Body: { notify_whatsapp?: boolean; notify_push?: boolean };
+  }>(
+    '/users/me/notification-prefs',
+    { preHandler: fastify.authenticate },
+    async (request, reply) => {
+      const { sub } = request.user as JwtAccessPayload;
+      const { notify_whatsapp, notify_push } = request.body;
+
+      if (notify_whatsapp === undefined && notify_push === undefined) {
+        return reply.code(400).send({
+          error: { code: 'NO_FIELDS', message: 'Provide at least one preference to update.', message_ar: 'يجب تحديد إعداد واحد على الأقل.' },
+        });
+      }
+
+      const updated = await fastify.db.user.update({
+        where: { id: sub },
+        data: {
+          ...(notify_whatsapp !== undefined ? { notify_whatsapp } : {}),
+          ...(notify_push !== undefined ? { notify_push } : {}),
+        },
+        select: { notify_whatsapp: true, notify_push: true },
+      });
+
+      return reply.send({ ...updated, message_ar: 'تم تحديث إعدادات الإشعارات.' });
     }
   );
 };
