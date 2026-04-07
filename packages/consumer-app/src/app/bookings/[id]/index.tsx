@@ -254,6 +254,25 @@ export default function BookingDetailScreen() {
           </View>
         )}
 
+        {/* US-080: Book Again CTA for completed bookings */}
+        {isCompleted && booking.business?.id && (
+          <TouchableOpacity
+            style={styles.bookAgainCta}
+            onPress={() => router.push({
+              pathname: '/business/[id]',
+              params: {
+                id: booking.business.id,
+                prefill_party_size: String(booking.party_size ?? 1),
+                prefill_occasion: booking.occasion ?? '',
+              },
+            })}
+          >
+            <Text style={styles.bookAgainEmoji}>🔁</Text>
+            <Text style={styles.bookAgainText}>احجز مجددًا في {booking.business.name_ar}</Text>
+            <Ionicons name="chevron-back" size={18} color={TEAL} />
+          </TouchableOpacity>
+        )}
+
         {/* Review CTA for completed bookings */}
         {isCompleted && !hasReview && (
           <TouchableOpacity style={styles.reviewCta} onPress={() => setReviewModalOpen(true)}>
@@ -484,6 +503,9 @@ const styles = StyleSheet.create({
   cancelBtn: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8, backgroundColor: '#FFEBEE', borderRadius: 14, padding: 16 },
   cancelBtnText: { fontFamily: 'Cairo-SemiBold', fontSize: 16, color: RED },
 
+  bookAgainCta: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: '#E6F4F1', borderRadius: 14, padding: 16, marginBottom: 12 },
+  bookAgainEmoji: { fontSize: 22 },
+  bookAgainText: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: TEAL, flex: 1, textAlign: 'right' },
   reviewCta: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10, backgroundColor: '#FFF8E1', borderRadius: 14, padding: 16, marginBottom: 16 },
   reviewCtaEmoji: { fontSize: 22 },
   reviewCtaText: { fontFamily: 'Cairo-SemiBold', fontSize: 16, color: '#F59E0B', flex: 1 },

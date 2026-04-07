@@ -55,6 +55,72 @@ function ProfileSkeleton() {
 
 // ── Slot chip ─────────────────────────────────────────────────
 
+// ── ReviewsSection (US-077) ───────────────────────────────────
+// Shows rating + review cards. Rating hidden until ≥5 verified reviews.
+// Consumer name masked: "أحمد م."
+
+function maskName(full: string): string {
+  const parts = full.trim().split(' ');
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1][0]}.`;
+}
+
+function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 2 }}>
+      {[1,2,3,4,5].map((s) => (
+        <Ionicons key={s} name={s <= rating ? 'star' : 'star-outline'} size={size} color="#F59E0B" />
+      ))}
+    </View>
+  );
+}
+
+function ReviewsSection({ businessId, isNew, accent }: { businessId: string; isNew: boolean; accent: string }) {
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useQuery({
+    queryKey: ['reviews', businessId, page],
+    queryFn: () => searchApi.getBusinessReviews(businessId, page).then((r) => r.data),
+  });
+
+  if (isNew) {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>التقييمات</Text>
+        <View style={[styles.newBadgeBlock, { borderColor: accent + '44' }]}>
+          <Text style={[styles.newBadgeText, { color: accent }]}>جديد — لا توجد تقييمات بعد</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>التقييمات</Text>
+      {isLoading && <ActivityIndicator color={TEAL} style={{ marginVertical: 16 }} />}
+      {data && data.reviews.length === 0 && (
+        <Text style={styles.noReviewsText}>لا توجد تقييمات معتمدة حتى الآن</Text>
+      )}
+      {data?.reviews.map((r: any, i: number) => (
+        <View key={i} style={styles.reviewCard}>
+          <View style={styles.reviewHeader}>
+            <StarRow rating={r.rating} />
+            <Text style={styles.reviewConsumer}>{maskName(r.consumer_name)}</Text>
+          </View>
+          {r.body ? <Text style={styles.reviewBody}>{r.body}</Text> : null}
+          <Text style={styles.reviewDate}>
+            {new Date(r.created_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}
+          </Text>
+        </View>
+      ))}
+      {data && data.total > page * 10 && (
+        <TouchableOpacity style={styles.loadMoreBtn} onPress={() => setPage((p) => p + 1)}>
+          <Text style={[styles.loadMoreText, { color: accent }]}>تحميل المزيد</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
 function SlotChip({
   slot,
   selected,
@@ -245,6 +311,9 @@ export default function BusinessProfileScreen() {
             </View>
           )}
 
+          {/* Reviews Section (US-077) */}
+          <ReviewsSection businessId={id as string} isNew={data.is_new} accent={accent} />
+
           {/* Spacer for sticky CTA */}
           <View style={{ height: 100 }} />
         </View>
@@ -336,6 +405,18 @@ const styles = StyleSheet.create({
   staffAvatar: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
   staffName: { fontFamily: 'Cairo-SemiBold', fontSize: 12, color: NAVY, textAlign: 'center' },
   staffSpecialty: { fontFamily: 'Cairo-Regular', fontSize: 11, color: GRAY, textAlign: 'center' },
+
+  // Reviews (US-077)
+  newBadgeBlock: { borderWidth: 1, borderRadius: 10, padding: 14, alignItems: 'center' },
+  newBadgeText: { fontFamily: 'Cairo-SemiBold', fontSize: 14 },
+  noReviewsText: { fontFamily: 'Cairo-Regular', fontSize: 14, color: GRAY, textAlign: 'center', paddingVertical: 12 },
+  reviewCard: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#E5E7EB' },
+  reviewHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  reviewConsumer: { fontFamily: 'Cairo-SemiBold', fontSize: 13, color: NAVY },
+  reviewBody: { fontFamily: 'Cairo-Regular', fontSize: 14, color: '#374151', lineHeight: 22, textAlign: 'right', marginBottom: 8 },
+  reviewDate: { fontFamily: 'Cairo-Regular', fontSize: 12, color: GRAY, textAlign: 'right' },
+  loadMoreBtn: { alignItems: 'center', paddingVertical: 12 },
+  loadMoreText: { fontFamily: 'Cairo-SemiBold', fontSize: 14 },
 
   // Slots
   slotsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 10 },

@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: '/admin/health',     label: 'Platform Health', icon: '📊' },
   { href: '/admin/businesses', label: 'Businesses',      icon: '🏢' },
   { href: '/admin/disputes',   label: 'Disputes',        icon: '⚖️' },
+  { href: '/admin/reviews',    label: 'Reviews',         icon: '⭐' },
   { href: '/admin/refunds',    label: 'Refunds',         icon: '↩️' },
 ];
 

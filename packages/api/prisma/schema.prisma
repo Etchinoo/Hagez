@@ -22,6 +22,11 @@ datasource db {
 // ENUMS
 // ─────────────────────────────────────────────────────────────
 
+enum LoyaltyTransactionType {
+  earn
+  redeem
+}
+
 enum UserRole {
   consumer
   business_owner
@@ -174,6 +179,7 @@ model User {
   profile_photo_url   String?
   role                UserRole    @default(consumer)
   status              UserStatus  @default(active)
+  loyalty_balance     Int         @default(0)  // US-079: 1 EGP deposit = 1 point
   no_show_count       Int         @default(0) @db.SmallInt
   deposit_mandatory   Boolean     @default(false)
   fcm_token           String?     // Firebase push token — updated on app open
@@ -188,9 +194,10 @@ model User {
   updated_at          DateTime    @updatedAt @db.Timestamptz
 
   // Relations
-  owned_businesses    Business[]  @relation("BusinessOwner")
-  bookings            Booking[]   @relation("ConsumerBookings")
+  owned_businesses    Business[]     @relation("BusinessOwner")
+  bookings            Booking[]      @relation("ConsumerBookings")
   reviews             Review[]
+  loyalty_points      LoyaltyPoint[]
 
   @@map("users")
 }
@@ -407,6 +414,7 @@ model Booking {
   review              Review?
   notifications       Notification[]
   status_logs         BookingStatusLog[]
+  loyalty_points      LoyaltyPoint[]
 
   @@index([consumer_id, status])
   @@index([business_id, status])
@@ -507,4 +515,25 @@ model Notification {
   @@index([status, scheduled_at])
   @@index([booking_id])
   @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: loyalty_points (US-079 — Phase 1 schema only, no consumer UI)
+// Rule: 1 EGP deposit paid = 1 point earned (configurable via env).
+// Redemption UI ships in Phase 2 (EP-16).
+// ─────────────────────────────────────────────────────────────
+
+model LoyaltyPoint {
+  id               String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String                  @db.Uuid
+  booking_id       String                  @db.Uuid
+  points           Int
+  transaction_type LoyaltyTransactionType
+  created_at       DateTime                @default(now()) @db.Timestamptz
+
+  user             User                    @relation(fields: [user_id], references: [id])
+  booking          Booking                 @relation(fields: [booking_id], references: [id])
+
+  @@index([user_id])
+  @@map("loyalty_points")
 }

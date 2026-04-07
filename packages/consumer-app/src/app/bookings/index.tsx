@@ -93,8 +93,20 @@ export default function MyBookingsScreen() {
             })}
           </Text>
           {booking.status === 'completed' && !booking.review && (
-            <TouchableOpacity style={styles.reviewButton}>
+            <TouchableOpacity style={styles.reviewButton} onPress={() => router.push(`/bookings/${booking.id}`)}>
               <Text style={styles.reviewButtonText}>قيّم 🌟</Text>
+            </TouchableOpacity>
+          )}
+          {/* US-080: Book Again */}
+          {booking.status === 'completed' && booking.business?.id && (
+            <TouchableOpacity
+              style={styles.bookAgainButton}
+              onPress={() => router.push({
+                pathname: '/business/[id]',
+                params: { id: booking.business.id, prefill_party_size: String(booking.party_size ?? 1) },
+              })}
+            >
+              <Text style={styles.bookAgainText}>احجز مجددًا 🔁</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -183,6 +195,8 @@ const styles = StyleSheet.create({
   dateTime: { fontFamily: 'Cairo-Regular', fontSize: 13, color: '#555', flex: 1, textAlign: 'right' },
   reviewButton: { backgroundColor: '#FFF8E1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   reviewButtonText: { fontFamily: 'Cairo-SemiBold', fontSize: 12, color: '#F59E0B' },
+  bookAgainButton: { backgroundColor: '#E6F4F1', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  bookAgainText: { fontFamily: 'Cairo-SemiBold', fontSize: 12, color: '#1B8A7A' },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyEmoji: { fontSize: 48, marginBottom: 16 },
   emptyText: { fontFamily: 'Cairo-Bold', fontSize: 18, color: NAVY },

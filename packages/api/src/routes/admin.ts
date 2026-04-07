@@ -13,6 +13,82 @@ import { initiateRefund, executeNoShowSplit } from '../services/payment.js';
 import { sendDisputeResolved } from '../services/notification.js';
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
+  // ── GET /admin/reviews/pending (US-076) ──────────────────
+  // Reviews that passed auto-moderation window but are still pending (flagged edge cases).
+
+  fastify.get<{ Querystring: { page?: string } }>(
+    '/admin/reviews/pending',
+    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    async (request, reply) => {
+      const page  = parseInt(request.query.page ?? '1');
+      const limit = 20;
+
+      const [reviews, total] = await Promise.all([
+        fastify.db.review.findMany({
+          where: { status: 'pending' },
+          include: {
+            consumer: { select: { full_name: true, phone: true } },
+            business: { select: { name_ar: true, name_en: true } },
+            booking:  { select: { booking_ref: true } },
+          },
+          orderBy: { created_at: 'asc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        fastify.db.review.count({ where: { status: 'pending' } }),
+      ]);
+
+      return reply.send({ reviews, total, page, has_more: page * limit < total });
+    }
+  );
+
+  // ── PATCH /admin/reviews/:id/moderate (US-076) ────────────
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: { action: 'approve' | 'reject'; reason?: string };
+  }>(
+    '/admin/reviews/:id/moderate',
+    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { action, reason } = request.body;
+
+      const review = await fastify.db.review.findUnique({
+        where: { id },
+        select: { id: true, business_id: true, status: true },
+      });
+      if (!review) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Review not found.' } });
+      }
+
+      const newStatus = action === 'approve' ? 'approved' : 'rejected';
+      await fastify.db.review.update({
+        where: { id },
+        data: { status: newStatus, moderated_at: new Date() },
+      });
+
+      // On approval, recalculate business rating
+      if (action === 'approve') {
+        const agg = await fastify.db.review.aggregate({
+          where: { business_id: review.business_id, status: 'approved' },
+          _avg: { rating: true },
+          _count: { id: true },
+        });
+        await fastify.db.business.update({
+          where: { id: review.business_id },
+          data: {
+            rating_avg: agg._avg.rating ?? 0,
+            review_count: agg._count.id,
+          },
+        });
+      }
+
+      fastify.log.info({ review_id: id, action, reason }, 'Review moderated by admin');
+      return reply.send({ review_id: id, status: newStatus });
+    }
+  );
+
   // ── GET /admin/businesses/pending ─────────────────────────
 
   fastify.get<{ Querystring: { page?: string } }>(

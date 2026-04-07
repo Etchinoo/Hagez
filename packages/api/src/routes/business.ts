@@ -109,6 +109,26 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
             : []),
         ]);
 
+        // US-079: Award loyalty points (1 EGP = 1 point, configurable)
+        const pointsPerEgp = parseInt(process.env.LOYALTY_POINTS_PER_EGP ?? '1');
+        const pointsEarned = Math.floor(depositAmount * pointsPerEgp);
+        if (pointsEarned > 0) {
+          await fastify.db.$transaction([
+            fastify.db.loyaltyPoint.create({
+              data: {
+                user_id: booking.consumer_id,
+                booking_id: booking.id,
+                points: pointsEarned,
+                transaction_type: 'earn',
+              },
+            }),
+            fastify.db.user.update({
+              where: { id: booking.consumer_id },
+              data: { loyalty_balance: { increment: pointsEarned } },
+            }),
+          ]);
+        }
+
         // Schedule review prompt 2h after slot end
         await scheduleReviewPrompt(fastify.db, booking.id);
         return reply.send({ booking_ref: booking.booking_ref, new_status: 'completed', payout_triggered: true });
