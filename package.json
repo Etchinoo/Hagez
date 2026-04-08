@@ -4,8 +4,7 @@
   "private": true,
   "description": "Super Reservation Platform — Arabic-native multi-category lifestyle booking, Egypt Phase 1",
   "workspaces": [
-    "packages/api",
-    "packages/dashboard"
+    "packages/api"
   ],
   "scripts": {
     "dev": "turbo run dev",
