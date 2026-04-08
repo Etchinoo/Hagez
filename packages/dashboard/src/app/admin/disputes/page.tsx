@@ -220,8 +220,8 @@ export default function DisputesPage() {
                     onChange={() => setDrawer((d) => ({ ...d, resolution: r, refund_amount: '' }))}
                   />
                   <span style={styles.radioLabel}>
-                    {r === 'uphold' && `Uphold no-show — 75/25 split (Business gets ${(depositOf(drawer.dispute) * 0.75).toFixed(0)} EGP)`}
-                    {r === 'reverse' && `Reverse — full refund to consumer (${depositOf(drawer.dispute).toLocaleString()} EGP)`}
+                    {r === 'uphold' && `Uphold no-show — 75/25 split (Business gets ${(depositOf(drawer.dispute!) * 0.75).toFixed(0)} EGP)`}
+                    {r === 'reverse' && `Reverse — full refund to consumer (${depositOf(drawer.dispute!).toLocaleString()} EGP)`}
                     {r === 'partial' && 'Partial refund — custom amount'}
                   </span>
                 </label>

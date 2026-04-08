@@ -83,7 +83,6 @@ function ShellInner({ children, pageTitle }: Props) {
             justifyContent: 'center',
             overflow: 'hidden',
             flexShrink: 0,
-            borderBottom: '1px solid rgba(255,255,255,0.1)',
             padding: sidebarOpen ? '8px 20px' : '8px',
             boxSizing: 'border-box',
             background: 'none',

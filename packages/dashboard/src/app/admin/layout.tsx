@@ -27,7 +27,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { user, logout } = useDashboardAuth();
   const { allowed } = useRoleGuard('admin');
 
-  if (!allowed) return null;
+  if (!allowed || !user) return null;
 
   const handleLogout = () => { logout(); router.push('/login'); };
 
