@@ -22,9 +22,10 @@
     "docker:reset": "docker compose down -v && docker compose up -d"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0",
+    "@eslint/js": "^9.39.4",
+    "@typescript-eslint/eslint-plugin": "^8.58.1",
+    "@typescript-eslint/parser": "^8.58.1",
+    "eslint": "^9.39.4",
     "prettier": "^3.2.0",
     "turbo": "^2.0.0"
   },
