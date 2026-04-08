@@ -34,6 +34,7 @@ import {
   sendCancellationConfirmed,
   sendDisputeReceived,
 } from '../services/notification.js';
+import { earnPoints, calcRedemption, redeemPoints } from '../services/loyalty.js';
 import type { JwtAccessPayload } from '../types/index.js';
 
 const bookingRoutes: FastifyPluginAsync = async (fastify) => {
@@ -49,6 +50,7 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       special_requests?: string;
       section_preference?: string;
       override_consumer_overlap?: boolean;
+      redeem_points?: number; // US-109 (EP-16): loyalty points to burn
     };
   }>(
     '/bookings',
@@ -59,6 +61,7 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
         slot_id, business_id, party_size = 1,
         resource_id, occasion, special_requests,
         section_preference, override_consumer_overlap,
+        redeem_points,
       } = request.body;
 
       try {
@@ -74,13 +77,37 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           override_consumer_overlap,
         });
 
-        const consumer = await fastify.db.user.findUniqueOrThrow({ where: { id: user.sub } });
+        const consumer = await fastify.db.user.findUniqueOrThrow({
+          where: { id: user.sub },
+          select: { full_name: true, phone: true, email: true, loyalty_balance: true },
+        });
         const booking = await fastify.db.booking.findUniqueOrThrow({
           where: { id: result.booking_id },
           include: { business: true },
         });
 
-        const totalAmount = Number(booking.deposit_amount) + Number(booking.platform_fee);
+        const depositAmount = Number(booking.deposit_amount);
+
+        // US-109: Apply loyalty redemption if requested
+        let pointsDiscount = 0;
+        let pointsToBurn   = 0;
+        if (redeem_points && redeem_points >= 100) {
+          const redemption = calcRedemption(consumer.loyalty_balance, redeem_points, depositAmount);
+          pointsDiscount = redemption.discountEgp;
+          pointsToBurn   = redemption.pointsToBurn;
+          // Persist redemption on the booking record
+          await fastify.db.booking.update({
+            where: { id: result.booking_id },
+            data: {
+              redeemed_points:     pointsToBurn,
+              points_discount_egp: pointsDiscount,
+            },
+          });
+          // Deduct points immediately (before payment) to prevent double-spend
+          await redeemPoints(fastify.db, user.sub, result.booking_id, pointsToBurn);
+        }
+
+        const totalAmount = Math.max(0, depositAmount - pointsDiscount) + Number(booking.platform_fee);
 
         const { order_id } = await createPaymobOrder({
           booking_ref: result.booking_ref,
@@ -101,7 +128,9 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           slot_hold_expires_at: result.slot_hold_expires_at.toISOString(),
           paymob_order_id: order_id,
           total_amount_egp: totalAmount,
-          deposit_amount_egp: Number(booking.deposit_amount),
+          deposit_amount_egp: depositAmount,
+          points_discount_egp: pointsDiscount,
+          redeemed_points: pointsToBurn,
           platform_fee_egp: Number(booking.platform_fee),
         });
       } catch (err) {
@@ -558,7 +587,10 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       const success = obj['success'] === true;
       const merchantOrderId = (obj['order'] as any)?.['merchant_order_id'] as string;
 
+      // US-087 (EP-20): Idempotency gate — AFTER HMAC validation, BEFORE any business logic.
+      // provider_transaction_id has a UNIQUE DB constraint (migration 003) as a hard stop.
       if (await isTransactionAlreadyProcessed(fastify.db, transactionId)) {
+        fastify.log.warn({ paymob_transaction_id: transactionId }, '[webhook-idempotency] Duplicate transaction received — acking without processing');
         return reply.code(200).send('Already processed');
       }
 
@@ -612,6 +644,20 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
         await scheduleReminders(fastify.db, booking.id);
         // US-032: Send Arabic payment receipt via WhatsApp
         await sendPaymentReceipt(fastify.db, booking.id);
+        // US-108 (EP-16): Earn loyalty points on confirmed booking
+        const fullBooking = await fastify.db.booking.findUnique({
+          where: { id: booking.id },
+          include: { business: { select: { name_ar: true } } },
+        });
+        if (fullBooking) {
+          await earnPoints(
+            fastify.db,
+            booking.consumer_id,
+            booking.id,
+            Number(fullBooking.deposit_amount),
+            fullBooking.business?.name_ar ?? 'الحجز'
+          );
+        }
       } else {
         await fastify.db.booking.update({
           where: { id: booking.id },

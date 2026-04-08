@@ -6,13 +6,15 @@
 // ============================================================
 
 import type { Metadata } from 'next';
+import { ToastProvider } from '@/components/Toast';
 
 export const metadata: Metadata = {
-  title: 'لوحة التحكم | سوبر ريزرفيشن',
+  title: 'لوحة التحكم | Hagez',
   description: 'إدارة حجوزاتك وتوافرك وإيراداتك',
   manifest: '/manifest.json',
   themeColor: '#0F2044',
   viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+  icons: { icon: '/favicon.png', shortcut: '/favicon.png' },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
-        <style>{`
+        <style dangerouslySetInnerHTML={{ __html: `
           * { box-sizing: border-box; }
           body {
             margin: 0;
@@ -43,9 +45,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             --text-secondary: #6B7280;
             --sidebar-width: 260px;
           }
-        `}</style>
+        ` }} />
       </head>
-      <body>{children}</body>
+      <body><ToastProvider>{children}</ToastProvider></body>
     </html>
   );
 }

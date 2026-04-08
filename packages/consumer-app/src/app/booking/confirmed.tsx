@@ -12,9 +12,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { bookingApi } from '../../services/api';
 import { toArabic } from '../../utils/numerals';
 
-const NAVY = '#0F2044';
-const TEAL = '#1B8A7A';
-const GRAY = '#9CA3AF';
+const NAVY  = '#0F2044';
+const TEAL  = '#1B8A7A';
+const GREEN = '#2E7D32';
+const GRAY  = '#9CA3AF';
 
 export default function BookingConfirmedScreen() {
   const { booking_ref, booking_id } = useLocalSearchParams<{
@@ -28,6 +29,8 @@ export default function BookingConfirmedScreen() {
     queryFn: () => bookingApi.getBooking(booking_id).then((r) => r.data),
     enabled: !!booking_id,
   });
+
+  const isCourt = data?.business?.category === 'court';
 
   const slotTime = data?.slot?.start_time
     ? new Date(data.slot.start_time).toLocaleString('ar-EG', {
@@ -85,6 +88,27 @@ export default function BookingConfirmedScreen() {
 
       {/* Actions */}
       <View style={styles.actions}>
+        {/* Squad share (court bookings only — US-085) */}
+        {isCourt && (
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: GREEN }]}
+            onPress={() =>
+              router.push({
+                pathname: '/booking/squad-share',
+                params: {
+                  booking_ref,
+                  business_name: data?.business?.name_ar ?? '',
+                  sport_type: data?.sport_type ?? '',
+                  slot_time: data?.slot?.start_time ?? '',
+                  duration_minutes: data?.slot?.duration_minutes ?? '60',
+                  player_count: data?.party_size ?? '2',
+                },
+              })
+            }
+          >
+            <Text style={styles.primaryBtnText}>⚽ شارك مع الفريق</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.primaryBtn}
           onPress={() => router.replace('/(tabs)/bookings')}

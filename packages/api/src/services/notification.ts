@@ -15,6 +15,9 @@ const sqs = new SQSClient({ region: env.AWS_REGION });
 
 type NotificationTemplate =
   | 'booking_confirmation_ar'
+  | 'booking_confirmation_court_ar'
+  | 'booking_confirmation_gaming_ar'
+  | 'booking_confirmation_car_wash_ar'
   | 'reminder_24h_ar'
   | 'reminder_2h_push'
   | 'upcoming_booking_biz'
@@ -91,21 +94,109 @@ export async function sendBookingConfirmation(
   });
 
   const datetimeAr = formatDatetimeAr(booking.slot.start_time);
+  const isCourt   = booking.business.category === 'court';
+  const isGaming  = booking.business.category === 'gaming_cafe';
+  const isCarWash = booking.business.category === 'car_wash';
 
-  // WhatsApp to consumer (primary)
-  await enqueueNotification(db, {
-    recipient_id: booking.consumer_id,
-    recipient_type: 'consumer',
-    booking_id: bookingId,
-    channel: 'whatsapp',
-    template_key: 'booking_confirmation_ar',
-    payload: {
-      booking_ref: booking.booking_ref,
-      business_name_ar: booking.business.name_ar,
-      datetime_ar: datetimeAr,
-      cancel_link: `https://app.reservr.eg/bookings/${booking.id}/cancel`,
-    },
-  });
+  // WhatsApp to consumer — court bookings use an enriched template
+  if (isCourt) {
+    const durationMins = booking.slot.duration_minutes;
+    const durationAr =
+      durationMins === 60 ? 'ساعة واحدة' :
+      durationMins === 90 ? 'ساعة ونصف' :
+      durationMins === 120 ? 'ساعتان' :
+      `${durationMins} دقيقة`;
+
+    const SPORT_LABELS_AR: Record<string, string> = {
+      football: 'كرة القدم', basketball: 'كرة السلة', tennis: 'تنس',
+      padel: 'بادل', squash: 'إسكواش', volleyball: 'كرة الطائرة',
+    };
+    const sportAr = SPORT_LABELS_AR[(booking as any).sport_type ?? ''] ?? (booking as any).sport_type ?? '';
+
+    await enqueueNotification(db, {
+      recipient_id: booking.consumer_id,
+      recipient_type: 'consumer',
+      booking_id: bookingId,
+      channel: 'whatsapp',
+      template_key: 'booking_confirmation_court_ar',
+      payload: {
+        booking_ref: booking.booking_ref,
+        business_name_ar: booking.business.name_ar,
+        datetime_ar: datetimeAr,
+        sport_type_ar: sportAr,
+        duration_ar: durationAr,
+        player_count: booking.party_size,
+        cancel_link: `https://app.reservr.eg/bookings/${booking.id}/cancel`,
+      },
+    });
+  } else if (isGaming) {
+    const durationMins = booking.slot.duration_minutes;
+    const durationAr =
+      durationMins === 60 ? 'ساعة واحدة' :
+      durationMins === 120 ? 'ساعتان' :
+      durationMins === 180 ? 'ثلاث ساعات' :
+      `${durationMins} دقيقة`;
+
+    const STATION_LABELS_AR: Record<string, string> = {
+      pc: 'كمبيوتر PC', console: 'بلايستيشن', vr: 'واقع افتراضي VR', group_room: 'غرفة جماعية',
+    };
+    const stationAr = STATION_LABELS_AR[(booking as any).station_type ?? ''] ?? (booking as any).station_type ?? '';
+
+    await enqueueNotification(db, {
+      recipient_id: booking.consumer_id,
+      recipient_type: 'consumer',
+      booking_id: bookingId,
+      channel: 'whatsapp',
+      template_key: 'booking_confirmation_gaming_ar',
+      payload: {
+        booking_ref: booking.booking_ref,
+        business_name_ar: booking.business.name_ar,
+        datetime_ar: datetimeAr,
+        station_type_ar: stationAr,
+        duration_ar: durationAr,
+        cancel_link: `https://app.reservr.eg/bookings/${booking.id}/cancel`,
+      },
+    });
+  } else if (isCarWash) {
+    const VEHICLE_LABELS_AR: Record<string, string> = {
+      sedan: 'سيدان', suv: 'SUV', truck: 'شاحنة', motorcycle: 'موتوسيكل',
+    };
+    const vehicleAr = VEHICLE_LABELS_AR[(booking as any).vehicle_type ?? ''] ?? (booking as any).vehicle_type ?? '';
+    const serviceAr = (booking as any).service_package ?? '';
+    const dropOffAr = (booking as any).drop_off === true ? 'إيداع السيارة' : 'انتظار أثناء الغسيل';
+
+    await enqueueNotification(db, {
+      recipient_id: booking.consumer_id,
+      recipient_type: 'consumer',
+      booking_id: bookingId,
+      channel: 'whatsapp',
+      template_key: 'booking_confirmation_car_wash_ar',
+      payload: {
+        booking_ref: booking.booking_ref,
+        business_name_ar: booking.business.name_ar,
+        datetime_ar: datetimeAr,
+        vehicle_type_ar: vehicleAr,
+        service_package_ar: serviceAr,
+        drop_off_ar: dropOffAr,
+        cancel_link: `https://app.reservr.eg/bookings/${booking.id}/cancel`,
+      },
+    });
+  } else {
+    // WhatsApp to consumer (primary — restaurant/salon)
+    await enqueueNotification(db, {
+      recipient_id: booking.consumer_id,
+      recipient_type: 'consumer',
+      booking_id: bookingId,
+      channel: 'whatsapp',
+      template_key: 'booking_confirmation_ar',
+      payload: {
+        booking_ref: booking.booking_ref,
+        business_name_ar: booking.business.name_ar,
+        datetime_ar: datetimeAr,
+        cancel_link: `https://app.reservr.eg/bookings/${booking.id}/cancel`,
+      },
+    });
+  }
 
   // Push to business dashboard — respect US-049 opt-out
   if (booking.business.notify_new_booking_push) {

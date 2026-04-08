@@ -19,6 +19,26 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { phone } = request.body;
 
+      // US-085 (EP-20): OTP velocity throttle — max 3 requests per phone per 10 minutes
+      const throttleKey = `OTP_THROTTLE:${phone}`;
+      const currentCount = await fastify.redis.get(throttleKey);
+      if (currentCount && parseInt(currentCount, 10) >= 3) {
+        fastify.log.warn({ phone_hash: phone.slice(-4) }, '[otp-throttle] Rate limit exceeded');
+        return reply.code(429).send({
+          error: {
+            code: 'OTP_THROTTLE',
+            message: 'Too many OTP requests. Please wait before trying again.',
+            message_ar: 'لقد تجاوزت الحد المسموح، يرجى الانتظار.',
+            retry_after_seconds: await fastify.redis.ttl(throttleKey),
+          },
+        });
+      }
+      // Increment counter; set 600s TTL on first request (MULTI ensures atomicity)
+      const pipeline = fastify.redis.multi();
+      pipeline.incr(throttleKey);
+      pipeline.expire(throttleKey, 600, 'NX'); // NX: only set TTL on first call
+      await pipeline.exec();
+
       // TODO: Replace with real random OTP when SMS (Twilio/360dialog) is integrated
       const otp = '1111';
       const otpHash = await bcrypt.hash(otp, 10);
@@ -77,6 +97,13 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Attach business category for dashboard use
+      const business = await fastify.db.business.findFirst({
+        where: { owner_user_id: user.id },
+        select: { category: true },
+      });
+      const userWithMeta = { ...user, business_category: business?.category ?? null };
+
       const accessToken = fastify.jwt.sign(
         { sub: user.id, phone: user.phone, role: user.role },
         { expiresIn: env.JWT_ACCESS_EXPIRY }
@@ -86,7 +113,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         { expiresIn: env.JWT_REFRESH_EXPIRY }
       );
 
-      return reply.send({ access_token: accessToken, refresh_token: refreshToken, user });
+      return reply.send({ access_token: accessToken, refresh_token: refreshToken, user: userWithMeta });
     }
   );
 

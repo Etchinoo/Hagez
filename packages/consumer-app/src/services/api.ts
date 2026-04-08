@@ -119,6 +119,8 @@ export const searchApi = {
     api.get(`/businesses/${id}/slots`, { params: { date, party_size: partySize, resource_id: resourceId } }),
   getBusinessReviews: (id: string, page = 1) =>
     api.get(`/businesses/${id}/reviews`, { params: { page } }),
+  getFeatured: (category?: string) =>
+    api.get('/search/featured', { params: { category, limit: 6 } }),
 };
 
 // ── Booking API ──────────────────────────────────────────────
@@ -133,6 +135,10 @@ export const bookingApi = {
     special_requests?: string;
     section_preference?: string;
     override_consumer_overlap?: boolean;
+    redeem_points?: number;       // EP-16: loyalty redemption
+    vehicle_type_id?: string;     // EP-21: car wash vehicle type FK
+    service_package?: string;     // EP-13: car wash service package
+    drop_off?: boolean;           // EP-13: drop-off vs wait
   }) => api.post('/bookings', data),
 
   initiatePayment: (bookingId: string, paymentMethod: string) =>
@@ -157,4 +163,28 @@ export const bookingApi = {
 
   getReceipt: (bookingId: string) =>
     api.get(`/bookings/${bookingId}/receipt`),
+};
+
+// ── Loyalty API (EP-16) ──────────────────────────────────────
+
+export const loyaltyApi = {
+  getSummary: () => api.get('/users/me/loyalty'),
+  getHistory: (page = 1) => api.get('/users/me/loyalty/history', { params: { page } }),
+};
+
+// ── Vehicle Types API (EP-21) ─────────────────────────────────
+
+export const vehicleTypesApi = {
+  list: () => api.get('/car-wash/vehicle-types'),
+};
+
+// ── Compliance API (EP-19) ────────────────────────────────────
+
+export const complianceApi = {
+  acceptPrivacyPolicy: (policy_version?: string) =>
+    api.post('/users/me/privacy-accept', { policy_version }),
+  deleteAccount: (confirmation: string) =>
+    api.delete('/users/me', { data: { confirmation } }),
+  requestDataExport: () => api.post('/users/me/data-export'),
+  getDataExportStatus: () => api.get('/users/me/data-export'),
 };

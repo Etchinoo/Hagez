@@ -25,14 +25,32 @@ const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
 const ORANGE = '#D4622A';
 const MAGENTA = '#C2185B';
+const GREEN  = '#2E7D32';
+const PURPLE = '#6B21A8';
+const CYAN   = '#0891B2';
+
+const CATEGORY_ACCENT: Record<string, string> = {
+  restaurant:  ORANGE,
+  salon:       MAGENTA,
+  court:       GREEN,
+  gaming_cafe: PURPLE,
+  car_wash:    CYAN,
+};
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  restaurant:  '🍽️',
+  salon:       '✂️',
+  court:       '⚽',
+  gaming_cafe: '🎮',
+  car_wash:    '🚗',
+};
 
 const CATEGORIES = [
-  { id: 'restaurant', label: 'مطاعم', emoji: '🍽️' },
-  { id: 'salon', label: 'صالونات', emoji: '✂️' },
-  // Phase 2:
-  // { id: 'court', label: 'ملاعب', emoji: '⚽' },
-  // { id: 'gaming_cafe', label: 'جيمنج', emoji: '🎮' },
-  // { id: 'car_wash', label: 'غسيل سيارات', emoji: '🚗' },
+  { id: 'restaurant',  label: 'مطاعم',        emoji: '🍽️' },
+  { id: 'salon',       label: 'صالونات',      emoji: '✂️' },
+  { id: 'court',       label: 'ملاعب',        emoji: '⚽' },
+  { id: 'gaming_cafe', label: 'جيمنج',        emoji: '🎮' },
+  { id: 'car_wash',    label: 'غسيل سيارات', emoji: '🚗' },
 ];
 
 const DISTRICTS = [
@@ -79,13 +97,19 @@ function RecentCardSkeleton() {
 // ── Business card ─────────────────────────────────────────────
 
 function BusinessCard({ business, onPress }: { business: any; onPress: () => void }) {
-  const accent = business.category === 'restaurant' ? ORANGE : MAGENTA;
+  const accent = CATEGORY_ACCENT[business.category] ?? TEAL;
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
       <View style={[styles.cardImagePlaceholder, { backgroundColor: accent + '18' }]}>
         <Text style={styles.cardImageEmoji}>
-          {business.category === 'restaurant' ? '🍽️' : '✂️'}
+          {CATEGORY_EMOJI[business.category] ?? '📍'}
         </Text>
+        {/* EP-17: Featured badge overlay */}
+        {business.is_featured && (
+          <View style={styles.featuredBadge}>
+            <Text style={styles.featuredBadgeText}>⭐ مميز</Text>
+          </View>
+        )}
       </View>
       <View style={styles.cardContent}>
         <View style={styles.cardNameRow}>
@@ -120,14 +144,41 @@ function BusinessCard({ business, onPress }: { business: any; onPress: () => voi
   );
 }
 
+// ── Featured carousel card ────────────────────────────────────
+
+function FeaturedCard({ business, onPress }: { business: any; onPress: () => void }) {
+  const accent = CATEGORY_ACCENT[business.category] ?? TEAL;
+  return (
+    <TouchableOpacity style={styles.featuredCard} onPress={onPress} activeOpacity={0.85}>
+      <View style={[styles.featuredCardImg, { backgroundColor: accent + '22' }]}>
+        <Text style={{ fontSize: 36 }}>{CATEGORY_EMOJI[business.category] ?? '📍'}</Text>
+        <View style={styles.featuredStarBadge}>
+          <Text style={styles.featuredStarText}>⭐ مميز</Text>
+        </View>
+      </View>
+      <View style={styles.featuredCardBody}>
+        <Text style={styles.featuredCardName} numberOfLines={1}>{business.name_ar}</Text>
+        <Text style={styles.featuredCardDistrict}>{business.district}</Text>
+        {business.next_slot && (
+          <Text style={styles.featuredCardSlot}>
+            {new Date(business.next_slot.start_time).toLocaleTimeString('ar-EG', {
+              hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo',
+            })} · {business.next_slot.deposit_amount} ج.م
+          </Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 // ── Recently visited card (US-015) ────────────────────────────
 
 function RecentCard({ business, onPress }: { business: any; onPress: () => void }) {
-  const accent = business.category === 'restaurant' ? ORANGE : MAGENTA;
+  const accent = CATEGORY_ACCENT[business.category] ?? TEAL;
   return (
     <TouchableOpacity style={styles.recentCard} onPress={onPress} activeOpacity={0.8}>
       <View style={[styles.recentImage, { backgroundColor: accent + '18' }]}>
-        <Text style={{ fontSize: 28 }}>{business.category === 'restaurant' ? '🍽️' : '✂️'}</Text>
+        <Text style={{ fontSize: 28 }}>{CATEGORY_EMOJI[business.category] ?? '📍'}</Text>
       </View>
       <Text style={styles.recentName} numberOfLines={2}>{business.name_ar}</Text>
     </TouchableOpacity>
@@ -165,8 +216,14 @@ export default function HomeScreen() {
   });
 
   const businesses = data?.businesses ?? [];
-  const featured = businesses.filter((b: any) => b.is_featured).slice(0, 3);
-  const nearby = businesses.filter((b: any) => !b.is_featured);
+  const nearby = businesses;
+
+  // EP-17: Dedicated featured endpoint for home carousel
+  const { data: featuredData } = useQuery({
+    queryKey: ['featured-businesses', selectedCategory],
+    queryFn: () => searchApi.getFeatured(selectedCategory).then((r) => r.data),
+  });
+  const featuredList: any[] = featuredData?.featured ?? [];
 
   // Deduplicate recent businesses
   const recentBookings: any[] = recentData?.bookings ?? [];
@@ -243,20 +300,17 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Featured Section */}
-      {isLoading ? (
+      {/* EP-17: Featured carousel */}
+      {featuredList.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⭐ مميزة لك</Text>
-          <BusinessCardSkeleton />
+          <Text style={styles.sectionTitle}>⭐ أماكن مميزة</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
+            {featuredList.map((b: any) => (
+              <FeaturedCard key={b.id} business={b} onPress={() => router.push(`/business/${b.id}`)} />
+            ))}
+          </ScrollView>
         </View>
-      ) : featured.length > 0 ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⭐ مميزة لك</Text>
-          {featured.map((b: any) => (
-            <BusinessCard key={b.id} business={b} onPress={() => router.push(`/business/${b.id}`)} />
-          ))}
-        </View>
-      ) : null}
+      )}
 
       {/* Nearby Section */}
       <View style={styles.section}>
@@ -320,6 +374,20 @@ const styles = StyleSheet.create({
   // Sections
   section: { paddingHorizontal: 24, marginBottom: 8 },
   sectionTitle: { fontFamily: 'Cairo-Bold', fontSize: 18, color: NAVY, marginBottom: 12, textAlign: 'right' },
+
+  // Featured badge overlay (EP-17)
+  featuredBadge: { position: 'absolute', top: 8, right: 8, backgroundColor: '#D97706', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  featuredBadgeText: { fontFamily: 'Cairo-Bold', fontSize: 11, color: '#fff' },
+
+  // Featured carousel card (EP-17)
+  featuredCard: { width: 180, backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
+  featuredCardImg: { height: 100, justifyContent: 'center', alignItems: 'center' },
+  featuredStarBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: '#D97706', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  featuredStarText: { fontFamily: 'Cairo-Bold', fontSize: 10, color: '#fff' },
+  featuredCardBody: { padding: 10 },
+  featuredCardName: { fontFamily: 'Cairo-Bold', fontSize: 13, color: NAVY, textAlign: 'right' },
+  featuredCardDistrict: { fontFamily: 'Cairo-Regular', fontSize: 11, color: '#888', textAlign: 'right', marginTop: 2 },
+  featuredCardSlot: { fontFamily: 'Cairo-Regular', fontSize: 11, color: TEAL, textAlign: 'right', marginTop: 4 },
 
   // Business card
   card: { backgroundColor: '#fff', borderRadius: 16, marginBottom: 12, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },

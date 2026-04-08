@@ -9,12 +9,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingsApi, slotsApi, bookingNotesApi } from '@/services/api';
+import { useLang } from '@/lib/i18n';
 import { format, addDays, startOfWeek } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
 type View = 'day' | 'week';
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {
+const STATUS_CONFIG_AR: Record<string, { label: string; bg: string; text: string; border: string }> = {
   confirmed:             { label: 'مؤكد',         bg: '#E8F5F3', text: '#1B8A7A', border: '#1B8A7A' },
   pending_payment:       { label: 'انتظار الدفع', bg: '#FFF8E1', text: '#F59E0B', border: '#F59E0B' },
   completed:             { label: 'مكتمل',         bg: '#F0F0F0', text: '#6B7280', border: '#9CA3AF' },
@@ -24,16 +25,89 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; b
   disputed:              { label: 'نزاع',          bg: '#FFF3CD', text: '#92400E', border: '#F59E0B' },
 };
 
+const STATUS_CONFIG_EN: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  confirmed:             { label: 'Confirmed',       bg: '#E8F5F3', text: '#1B8A7A', border: '#1B8A7A' },
+  pending_payment:       { label: 'Pending payment', bg: '#FFF8E1', text: '#F59E0B', border: '#F59E0B' },
+  completed:             { label: 'Completed',       bg: '#F0F0F0', text: '#6B7280', border: '#9CA3AF' },
+  cancelled_by_consumer: { label: 'Cancelled (guest)',bg: '#FEF2F2', text: '#D32F2F', border: '#FECACA' },
+  cancelled_by_business: { label: 'Cancelled (biz)', bg: '#FEF2F2', text: '#D32F2F', border: '#FECACA' },
+  no_show:               { label: 'No show',         bg: '#FEF2F2', text: '#D32F2F', border: '#FECACA' },
+  disputed:              { label: 'Disputed',        bg: '#FFF3CD', text: '#92400E', border: '#F59E0B' },
+};
+
+const COPY = {
+  ar: {
+    day:            'يوم',
+    week:           'أسبوع',
+    today:          'اليوم',
+    loading:        'جاري التحميل...',
+    noBookings:     'لا توجد حجوزات لهذا اليوم',
+    bookingCount:   'حجز',
+    guests:         'أشخاص',
+    availableSlots: 'المواعيد المتاحة — منع الحجز',
+    blockSlot:      'منع الحجز 🔒',
+    modalTime:      'الوقت',
+    modalGuests:    'عدد الأشخاص',
+    modalOccasion:  'المناسبة',
+    modalDeposit:   'الإيداع',
+    egp:            'ج.م',
+    modalRequests:  'طلبات خاصة',
+    modalContact:   'التواصل',
+    callBtn:        '📞 اتصال',
+    modalNotes:     'ملاحظات داخلية',
+    notesPlaceholder:'ملاحظاتك الخاصة — غير مرئية للعميل',
+    notesLoading:   'جاري الحفظ...',
+    notesSave:      'حفظ الملاحظات',
+    markNoShow:     'تسجيل غياب',
+    markComplete:   'تأكيد الحضور ✅',
+    locale:         'ar-EG',
+    dateFnsLocale:  'ar',
+  },
+  en: {
+    day:            'Day',
+    week:           'Week',
+    today:          'Today',
+    loading:        'Loading...',
+    noBookings:     'No bookings for this day',
+    bookingCount:   'bookings',
+    guests:         'guests',
+    availableSlots: 'Available slots — Block booking',
+    blockSlot:      'Block 🔒',
+    modalTime:      'Time',
+    modalGuests:    'Party size',
+    modalOccasion:  'Occasion',
+    modalDeposit:   'Deposit',
+    egp:            'EGP',
+    modalRequests:  'Special requests',
+    modalContact:   'Contact',
+    callBtn:        '📞 Call',
+    modalNotes:     'Internal notes',
+    notesPlaceholder:'Your private notes — not visible to the guest',
+    notesLoading:   'Saving...',
+    notesSave:      'Save notes',
+    markNoShow:     'Mark no-show',
+    markComplete:   'Confirm attended ✅',
+    locale:         'en-US',
+    dateFnsLocale:  'en',
+  },
+};
+
 // ── Booking Detail Modal (US-055) ────────────────────────────
 
 function BookingDetailModal({
   booking,
   onClose,
   onStatusUpdate,
+  c,
+  STATUS_CONFIG,
+  dir,
 }: {
   booking: any;
   onClose: () => void;
   onStatusUpdate: (id: string, status: 'completed' | 'no_show') => void;
+  c: typeof COPY.ar;
+  STATUS_CONFIG: typeof STATUS_CONFIG_AR;
+  dir: 'rtl' | 'ltr';
 }) {
   const [notes, setNotes] = useState<string>(booking.internal_notes ?? '');
   const [saving, setSaving] = useState(false);
@@ -56,10 +130,11 @@ function BookingDetailModal({
   const maskedPhone = phone.length > 6
     ? phone.slice(0, 4) + '****' + phone.slice(-3)
     : phone;
+  const dateLocale = dir === 'rtl' ? ar : undefined;
 
   return (
     <div style={modalStyles.overlay} onClick={onClose}>
-      <div style={modalStyles.panel} onClick={(e) => e.stopPropagation()}>
+      <div style={{ ...modalStyles.panel, direction: dir }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={modalStyles.header}>
           <button style={modalStyles.closeBtn} onClick={onClose}>✕</button>
@@ -77,46 +152,43 @@ function BookingDetailModal({
           <div style={modalStyles.infoGrid}>
             {startTime && (
               <div style={modalStyles.infoItem}>
-                <div style={modalStyles.infoLabel}>الوقت</div>
+                <div style={modalStyles.infoLabel}>{c.modalTime}</div>
                 <div style={modalStyles.infoValue}>
-                  {format(startTime, 'h:mm a', { locale: ar })}
-                  {endTime ? ` — ${format(endTime, 'h:mm a', { locale: ar })}` : ''}
+                  {format(startTime, 'h:mm a', { locale: dateLocale })}
+                  {endTime ? ` — ${format(endTime, 'h:mm a', { locale: dateLocale })}` : ''}
                 </div>
               </div>
             )}
             <div style={modalStyles.infoItem}>
-              <div style={modalStyles.infoLabel}>عدد الأشخاص</div>
+              <div style={modalStyles.infoLabel}>{c.modalGuests}</div>
               <div style={modalStyles.infoValue}>{booking.party_size}</div>
             </div>
             {booking.occasion && (
               <div style={modalStyles.infoItem}>
-                <div style={modalStyles.infoLabel}>المناسبة</div>
+                <div style={modalStyles.infoLabel}>{c.modalOccasion}</div>
                 <div style={modalStyles.infoValue}>{booking.occasion}</div>
               </div>
             )}
             <div style={modalStyles.infoItem}>
-              <div style={modalStyles.infoLabel}>الإيداع</div>
-              <div style={modalStyles.infoValue}>{Number(booking.deposit_amount ?? 0).toFixed(0)} ج.م</div>
+              <div style={modalStyles.infoLabel}>{c.modalDeposit}</div>
+              <div style={modalStyles.infoValue}>{Number(booking.deposit_amount ?? 0).toFixed(0)} {c.egp}</div>
             </div>
           </div>
 
           {/* Special requests */}
           {booking.special_requests && (
             <div style={modalStyles.section}>
-              <div style={modalStyles.sectionTitle}>طلبات خاصة</div>
+              <div style={modalStyles.sectionTitle}>{c.modalRequests}</div>
               <div style={modalStyles.sectionText}>{booking.special_requests}</div>
             </div>
           )}
 
           {/* Contact (masked phone + tap-to-call) */}
           <div style={modalStyles.section}>
-            <div style={modalStyles.sectionTitle}>التواصل</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'flex-end' }}>
-              <a
-                href={`tel:${phone}`}
-                style={modalStyles.callBtn}
-              >
-                📞 اتصال
+            <div style={modalStyles.sectionTitle}>{c.modalContact}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: dir === 'rtl' ? 'flex-end' : 'flex-start' }}>
+              <a href={`tel:${phone}`} style={modalStyles.callBtn}>
+                {c.callBtn}
               </a>
               <span style={modalStyles.sectionText}>{maskedPhone}</span>
             </div>
@@ -124,17 +196,17 @@ function BookingDetailModal({
 
           {/* Internal notes */}
           <div style={modalStyles.section}>
-            <div style={modalStyles.sectionTitle}>ملاحظات داخلية</div>
+            <div style={modalStyles.sectionTitle}>{c.modalNotes}</div>
             <textarea
-              style={modalStyles.notesInput}
+              style={{ ...modalStyles.notesInput, direction: dir }}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="ملاحظاتك الخاصة — غير مرئية للعميل"
+              placeholder={c.notesPlaceholder}
               rows={3}
               maxLength={1000}
             />
             <button style={modalStyles.saveNotesBtn} onClick={saveNotes} disabled={saving}>
-              {saving ? 'جاري الحفظ...' : 'حفظ الملاحظات'}
+              {saving ? c.notesLoading : c.notesSave}
             </button>
           </div>
 
@@ -145,13 +217,13 @@ function BookingDetailModal({
                 style={modalStyles.noShowActionBtn}
                 onClick={() => { onStatusUpdate(booking.id, 'no_show'); onClose(); }}
               >
-                تسجيل غياب
+                {c.markNoShow}
               </button>
               <button
                 style={modalStyles.completeActionBtn}
                 onClick={() => { onStatusUpdate(booking.id, 'completed'); onClose(); }}
               >
-                تأكيد الحضور ✅
+                {c.markComplete}
               </button>
             </div>
           )}
@@ -164,6 +236,11 @@ function BookingDetailModal({
 // ── Main Calendar Component ──────────────────────────────────
 
 export default function BookingCalendar() {
+  const { dir, lang } = useLang();
+  const c = COPY[lang];
+  const STATUS_CONFIG = lang === 'ar' ? STATUS_CONFIG_AR : STATUS_CONFIG_EN;
+  const dateLocale = lang === 'ar' ? ar : undefined;
+
   const [view, setView] = useState<View>('day');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
@@ -201,15 +278,15 @@ export default function BookingCalendar() {
   };
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, direction: dir }}>
       {/* Toolbar */}
       <div style={styles.toolbar}>
         <div style={styles.navButtons}>
-          <button style={styles.navBtn} onClick={() => navigateDate(-1)}>◀</button>
+          <button style={styles.navBtn} onClick={() => navigateDate(dir === 'rtl' ? 1 : -1)}>◀</button>
           <span style={styles.dateLabel}>
-            {format(selectedDate, view === 'day' ? 'EEEE، d MMMM yyyy' : 'MMMM yyyy', { locale: ar })}
+            {format(selectedDate, view === 'day' ? 'EEEE، d MMMM yyyy' : 'MMMM yyyy', { locale: dateLocale })}
           </span>
-          <button style={styles.navBtn} onClick={() => navigateDate(1)}>▶</button>
+          <button style={styles.navBtn} onClick={() => navigateDate(dir === 'rtl' ? -1 : 1)}>▶</button>
         </div>
         <div style={styles.viewToggle}>
           {(['day', 'week'] as const).map((v) => (
@@ -218,16 +295,16 @@ export default function BookingCalendar() {
               style={{ ...styles.viewBtn, ...(view === v ? styles.viewBtnActive : {}) }}
               onClick={() => setView(v)}
             >
-              {v === 'day' ? 'يوم' : 'أسبوع'}
+              {v === 'day' ? c.day : c.week}
             </button>
           ))}
         </div>
-        <button style={styles.todayBtn} onClick={() => setSelectedDate(new Date())}>اليوم</button>
+        <button style={styles.todayBtn} onClick={() => setSelectedDate(new Date())}>{c.today}</button>
       </div>
 
       {/* Calendar Content */}
       {isLoading ? (
-        <div style={styles.loading}>جاري التحميل...</div>
+        <div style={styles.loading}>{c.loading}</div>
       ) : (
         <div style={styles.grid}>
           {view === 'week' && (
@@ -242,13 +319,13 @@ export default function BookingCalendar() {
                   }}
                   onClick={() => { setSelectedDate(day); setView('day'); }}
                 >
-                  <span style={styles.weekDayName}>{format(day, 'EEEE', { locale: ar })}</span>
+                  <span style={styles.weekDayName}>{format(day, 'EEEE', { locale: dateLocale })}</span>
                   <span style={styles.weekDayNum}>{format(day, 'd')}</span>
                   <span style={styles.weekDayCount}>
                     {bookings.filter((b) => {
                       const s = b.slot?.start_time;
                       return s && format(new Date(s), 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd');
-                    }).length} حجز
+                    }).length} {c.bookingCount}
                   </span>
                 </div>
               ))}
@@ -258,7 +335,7 @@ export default function BookingCalendar() {
           {bookings.length === 0 ? (
             <div style={styles.emptyState}>
               <span style={styles.emptyEmoji}>📅</span>
-              <p style={styles.emptyText}>لا توجد حجوزات لهذا اليوم</p>
+              <p style={styles.emptyText}>{c.noBookings}</p>
             </div>
           ) : (
             <div style={styles.bookingsList}>
@@ -269,16 +346,16 @@ export default function BookingCalendar() {
                 return (
                   <div
                     key={booking.id}
-                    style={{ ...styles.bookingCard, backgroundColor: sc.bg, borderRight: `4px solid ${sc.border}` }}
+                    style={{ ...styles.bookingCard, backgroundColor: sc.bg, borderInlineStart: `4px solid ${sc.border}` }}
                     onClick={() => setSelectedBooking(booking)}
                   >
                     <div style={styles.bookingTime}>
-                      {startTime ? format(startTime, 'h:mm a', { locale: ar }) : '—'}
+                      {startTime ? format(startTime, 'h:mm a', { locale: dateLocale }) : '—'}
                     </div>
                     <div style={styles.bookingInfo}>
                       <div style={styles.bookingGuest}>{booking.consumer?.full_name}</div>
                       <div style={styles.bookingDetails}>
-                        {booking.party_size} أشخاص
+                        {booking.party_size} {c.guests}
                         {booking.occasion ? ` · ${booking.occasion}` : ''}
                       </div>
                       {booking.special_requests && (
@@ -294,13 +371,13 @@ export default function BookingCalendar() {
                             style={styles.completeBtn}
                             onClick={() => updateStatus.mutate({ id: booking.id, status: 'completed' })}
                           >
-                            حضر ✅
+                            {c.markComplete}
                           </button>
                           <button
                             style={styles.noShowBtn}
                             onClick={() => updateStatus.mutate({ id: booking.id, status: 'no_show' })}
                           >
-                            غياب
+                            {c.markNoShow}
                           </button>
                         </div>
                       )}
@@ -314,21 +391,21 @@ export default function BookingCalendar() {
           {/* Available slots that can be blocked */}
           {view === 'day' && slots.filter((s: any) => s.status === 'available').length > 0 && (
             <div style={styles.slotsSection}>
-              <div style={styles.slotsSectionTitle}>المواعيد المتاحة — منع الحجز</div>
+              <div style={styles.slotsSectionTitle}>{c.availableSlots}</div>
               <div style={styles.slotsList}>
                 {slots
                   .filter((s: any) => s.status === 'available')
                   .map((slot: any) => (
                     <div key={slot.id} style={styles.slotRow}>
                       <span style={styles.slotTime}>
-                        {format(new Date(slot.start_time), 'h:mm a', { locale: ar })}
+                        {format(new Date(slot.start_time), 'h:mm a', { locale: dateLocale })}
                       </span>
                       <button
                         style={styles.blockBtn}
                         onClick={() => blockSlot.mutate(slot.id)}
                         disabled={blockSlot.isPending}
                       >
-                        منع الحجز 🔒
+                        {c.blockSlot}
                       </button>
                     </div>
                   ))}
@@ -347,6 +424,9 @@ export default function BookingCalendar() {
             updateStatus.mutate({ id, status });
             setSelectedBooking(null);
           }}
+          c={c}
+          STATUS_CONFIG={STATUS_CONFIG}
+          dir={dir}
         />
       )}
     </div>
@@ -387,7 +467,7 @@ const styles: Record<string, React.CSSProperties> = {
   bookingsList: { display: 'flex', flexDirection: 'column', gap: '12px' },
   bookingCard: {
     display: 'flex', alignItems: 'flex-start', padding: '16px', borderRadius: '12px',
-    gap: '16px', direction: 'rtl', cursor: 'pointer',
+    gap: '16px', cursor: 'pointer',
     transition: 'transform 0.1s, box-shadow 0.1s',
     boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   },
@@ -403,8 +483,8 @@ const styles: Record<string, React.CSSProperties> = {
   completeBtn: { padding: '6px 12px', background: '#1B8A7A', border: 'none', borderRadius: '8px', fontFamily: 'Cairo, sans-serif', fontSize: '13px', fontWeight: 700, color: '#fff', cursor: 'pointer' },
   noShowBtn: { padding: '6px 12px', background: '#FEE2E2', border: 'none', borderRadius: '8px', fontFamily: 'Cairo, sans-serif', fontSize: '13px', fontWeight: 600, color: '#D32F2F', cursor: 'pointer' },
   slotsSection: { marginTop: '24px', borderTop: '1px solid #E5E7EB', paddingTop: '16px' },
-  slotsSectionTitle: { fontFamily: 'Cairo, sans-serif', fontSize: '13px', fontWeight: 700, color: '#6B7280', marginBottom: '12px', textAlign: 'right' },
-  slotsList: { display: 'flex', flexWrap: 'wrap', gap: '10px', direction: 'rtl' },
+  slotsSectionTitle: { fontFamily: 'Cairo, sans-serif', fontSize: '13px', fontWeight: 700, color: '#6B7280', marginBottom: '12px' },
+  slotsList: { display: 'flex', flexWrap: 'wrap', gap: '10px' },
   slotRow: { display: 'flex', alignItems: 'center', gap: '10px', background: '#F7F8FA', padding: '8px 14px', borderRadius: '10px', border: '1px solid #E5E7EB' },
   slotTime: { fontFamily: 'Cairo, sans-serif', fontSize: '14px', fontWeight: 600, color: '#0F2044' },
   blockBtn: { padding: '4px 10px', background: 'none', border: '1px solid #D32F2F', borderRadius: '6px', fontFamily: 'Cairo, sans-serif', fontSize: '12px', color: '#D32F2F', cursor: 'pointer' },
@@ -417,16 +497,16 @@ const modalStyles: Record<string, React.CSSProperties> = {
   },
   panel: {
     background: '#fff', borderRadius: '20px', width: '480px', maxWidth: '95vw',
-    maxHeight: '90vh', overflow: 'auto', direction: 'rtl',
+    maxHeight: '90vh', overflow: 'auto',
     boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
   },
   header: {
     display: 'flex', alignItems: 'center', gap: '16px', padding: '20px 24px',
-    borderBottom: '1px solid #E5E7EB', flexDirection: 'row-reverse',
+    borderBottom: '1px solid #E5E7EB',
   },
   closeBtn: {
     background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer',
-    color: '#9CA3AF', padding: '4px', marginLeft: 'auto',
+    color: '#9CA3AF', padding: '4px', marginInlineStart: 'auto',
   },
   headerRef: { fontFamily: 'monospace', fontSize: '12px', color: '#9CA3AF' },
   headerGuest: { fontFamily: 'Cairo, sans-serif', fontWeight: 700, fontSize: '20px', color: '#0F2044' },
@@ -447,7 +527,7 @@ const modalStyles: Record<string, React.CSSProperties> = {
   notesInput: {
     width: '100%', border: '1.5px solid #E5E7EB', borderRadius: '10px',
     padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: '14px',
-    color: '#0F2044', resize: 'vertical', direction: 'rtl', boxSizing: 'border-box',
+    color: '#0F2044', resize: 'vertical', boxSizing: 'border-box',
   },
   saveNotesBtn: {
     alignSelf: 'flex-end', padding: '8px 20px', background: '#0F2044', border: 'none',

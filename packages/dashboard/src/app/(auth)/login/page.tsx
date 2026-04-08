@@ -8,6 +8,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDashboardAuth } from '@/store/auth';
 import { authApi } from '@/services/api';
+import { getLoginRedirect } from '@/lib/rbac';
+import Link from 'next/link';
 
 type Step = 'phone' | 'otp';
 
@@ -21,10 +23,18 @@ export default function BusinessLoginPage() {
   const [error, setError] = useState('');
 
   const handleRequestOtp = async () => {
+    if (!phone.trim()) {
+      setError('يرجى إدخال رقم الهاتف.');
+      return;
+    }
+    if (!/^\+\d{10,15}$/.test(phone.trim())) {
+      setError('رقم الهاتف غير صحيح. مثال: +201000000001');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      await authApi.requestOtp(phone);
+      await authApi.requestOtp(phone.trim());
       setStep('otp');
     } catch {
       setError('فشل إرسال الكود. حاول مرة أخرى.');
@@ -34,13 +44,28 @@ export default function BusinessLoginPage() {
   };
 
   const handleVerifyOtp = async () => {
+    if (!otp.trim()) {
+      setError('يرجى إدخال كود التحقق.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       await login(phone, otp);
-      router.replace('/');
+      // RBAC: redirect to the correct zone based on the verified role
+      const authStore = (await import('@/store/auth')).useDashboardAuth.getState();
+      const role = authStore.user?.role ?? 'consumer';
+      const destination = getLoginRedirect(role);
+      if (!destination) {
+        // Consumer account — not allowed in any dashboard zone
+        authStore.logout();
+        setError('هذا الحساب غير مرتبط بنشاط تجاري. تواصل مع فريق Hagez.');
+        setStep('phone');
+      } else {
+        router.replace(destination);
+      }
     } catch {
-      setError('الكود غير صحيح أو منتهي الصلاحية');
+      setError('الكود غير صحيح أو منتهي الصلاحية.');
     } finally {
       setLoading(false);
     }
@@ -50,9 +75,9 @@ export default function BusinessLoginPage() {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.logoBlock}>
-          <div style={styles.logo} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Hagez" style={{ width: '100%', height: 'auto', marginBottom: '8px' }} />
           <h1 style={styles.title}>لوحة تحكم الأعمال</h1>
-          <p style={styles.subtitle}>سوبر ريزرفيشن</p>
         </div>
 
         {step === 'phone' ? (
@@ -61,10 +86,13 @@ export default function BusinessLoginPage() {
             <input
               style={styles.input}
               type="tel"
+              name="phone"
+              autoComplete="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleRequestOtp()}
               placeholder="+201XXXXXXXXX"
-              dir="rtl"
+              dir="ltr"
               autoFocus
             />
             {error && <p style={styles.error}>{error}</p>}
@@ -83,6 +111,7 @@ export default function BusinessLoginPage() {
               maxLength={4}
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleVerifyOtp()}
               placeholder="1111"
               autoFocus
             />
@@ -94,6 +123,13 @@ export default function BusinessLoginPage() {
               تغيير رقم الهاتف
             </button>
           </>
+        )}
+
+        {step === 'phone' && (
+          <p style={styles.signupRow}>
+            نشاط تجاري جديد؟{' '}
+            <Link href="/signup" style={styles.signupLink}>سجّل هنا</Link>
+          </p>
         )}
       </div>
     </div>
@@ -132,4 +168,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'Cairo, sans-serif', fontSize: '14px', color: '#1B8A7A',
     cursor: 'pointer', marginTop: '8px',
   },
+  signupRow: {
+    fontFamily: 'Cairo, sans-serif', fontSize: '14px', color: '#6B7280',
+    textAlign: 'center', marginTop: '20px',
+  },
+  signupLink: { color: '#1B8A7A', fontWeight: 700, textDecoration: 'none' },
 };

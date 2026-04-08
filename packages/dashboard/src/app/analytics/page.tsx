@@ -9,24 +9,70 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { analyticsApi } from '@/services/api';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-const queryClient = new QueryClient();
+import { useLang } from '@/lib/i18n';
+import DashboardShell from '@/components/DashboardShell';
 
 export default function AnalyticsPageWrapper() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <DashboardShell pageTitle="page_analytics">
       <AnalyticsPage />
-    </QueryClientProvider>
+    </DashboardShell>
   );
 }
 
 // Platform average no-show rate for comparison (hardcoded for MVP)
 const PLATFORM_AVG_NO_SHOW = 12;
 
+const COPY = {
+  ar: {
+    title:           'الإحصائيات',
+    loading:         'جاري التحميل...',
+    kpi1Label:       'إجمالي الحجوزات',
+    kpi1Sub:         'مؤكد حالياً',
+    kpi2Label:       'حجوزات مكتملة',
+    kpi2Sub:         'غياب ممنوع',
+    kpi3Label:       'إيراد العربون',
+    kpi3Sub:         'من الحجوزات المكتملة',
+    kpi3Unit:        'ج.م',
+    kpi4Label:       'نسبة الغياب',
+    kpi4Sub:         'متوسط المنصة',
+    trendTitle:      'حجم الحجوزات اليومية',
+    dayUnit:         'يوم',
+    noData:          'لا توجد بيانات',
+    noShowTitle:     'نسبة الغياب مقارنة بالمنصة',
+    myBusiness:      'نشاطك التجاري',
+    platformAvg:     'متوسط المنصة',
+    bookingTooltip:  'حجز',
+    locale:          'ar-EG',
+  },
+  en: {
+    title:           'Analytics',
+    loading:         'Loading...',
+    kpi1Label:       'Total bookings',
+    kpi1Sub:         'currently confirmed',
+    kpi2Label:       'Completed bookings',
+    kpi2Sub:         'no-shows prevented',
+    kpi3Label:       'Deposit revenue',
+    kpi3Sub:         'from completed bookings',
+    kpi3Unit:        'EGP',
+    kpi4Label:       'No-show rate',
+    kpi4Sub:         'Platform avg.',
+    trendTitle:      'Daily booking volume',
+    dayUnit:         'days',
+    noData:          'No data',
+    noShowTitle:     'No-show rate vs. platform',
+    myBusiness:      'Your business',
+    platformAvg:     'Platform average',
+    bookingTooltip:  'bookings',
+    locale:          'en-US',
+  },
+};
+
 type Period = '7' | '30' | '90';
 
 function AnalyticsPage() {
+  const { dir, lang } = useLang();
+  const c = COPY[lang];
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [trendDays, setTrendDays] = useState<Period>('30');
 
@@ -45,17 +91,17 @@ function AnalyticsPage() {
   const maxBookings = Math.max(...trend.map((t) => t.bookings), 1);
 
   const kpis = [
-    { label: 'إجمالي الحجوزات',  value: stats.bookings_total ?? '—',  sub: `${stats.bookings_confirmed ?? 0} مؤكد حالياً`, color: '#0F2044' },
-    { label: 'حجوزات مكتملة',    value: stats.bookings_completed ?? '—', sub: `${stats.no_shows_prevented ?? 0} غياب ممنوع`, color: '#1B8A7A' },
-    { label: 'إيراد العربون',     value: stats.deposit_revenue_egp != null ? `${Math.round(stats.deposit_revenue_egp)} ج.م` : '—', sub: 'من الحجوزات المكتملة', color: '#0057FF' },
-    { label: 'نسبة الغياب',       value: stats.no_show_rate_pct != null ? `${stats.no_show_rate_pct}%` : '—', sub: `متوسط المنصة ${PLATFORM_AVG_NO_SHOW}%`, color: (stats.no_show_rate_pct ?? 0) > PLATFORM_AVG_NO_SHOW ? '#D32F2F' : '#1B8A7A' },
+    { label: c.kpi1Label, value: stats.bookings_total ?? '—',  sub: `${stats.bookings_confirmed ?? 0} ${c.kpi1Sub}`, color: '#0F2044' },
+    { label: c.kpi2Label, value: stats.bookings_completed ?? '—', sub: `${stats.no_shows_prevented ?? 0} ${c.kpi2Sub}`, color: '#1B8A7A' },
+    { label: c.kpi3Label, value: stats.deposit_revenue_egp != null ? `${Math.round(stats.deposit_revenue_egp)} ${c.kpi3Unit}` : '—', sub: c.kpi3Sub, color: '#0057FF' },
+    { label: c.kpi4Label, value: stats.no_show_rate_pct != null ? `${stats.no_show_rate_pct}%` : '—', sub: `${c.kpi4Sub} ${PLATFORM_AVG_NO_SHOW}%`, color: (stats.no_show_rate_pct ?? 0) > PLATFORM_AVG_NO_SHOW ? '#D32F2F' : '#1B8A7A' },
   ];
 
   return (
-    <div style={{ padding: '24px', fontFamily: 'Cairo, sans-serif', direction: 'rtl', maxWidth: '1100px' }}>
+    <div style={{ padding: '24px', fontFamily: 'Cairo, sans-serif', direction: dir, maxWidth: '1100px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
-        <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F2044', margin: 0 }}>الإحصائيات</h2>
+        <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F2044', margin: 0 }}>{c.title}</h2>
         <input
           type="month"
           value={month}
@@ -66,7 +112,7 @@ function AnalyticsPage() {
 
       {/* KPI Cards */}
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#6B7280' }}>جاري التحميل...</div>
+        <div style={{ textAlign: 'center', padding: '40px', color: '#6B7280' }}>{c.loading}</div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px', marginBottom: '32px' }}>
           {kpis.map((kpi) => (
@@ -85,7 +131,7 @@ function AnalyticsPage() {
       {/* Trend Chart */}
       <div style={{ background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-          <h3 style={{ fontWeight: 700, fontSize: '17px', color: '#0F2044', margin: 0 }}>حجم الحجوزات اليومية</h3>
+          <h3 style={{ fontWeight: 700, fontSize: '17px', color: '#0F2044', margin: 0 }}>{c.trendTitle}</h3>
           <div style={{ display: 'flex', gap: '6px' }}>
             {(['7', '30', '90'] as Period[]).map((d) => (
               <button
@@ -99,16 +145,16 @@ function AnalyticsPage() {
                   borderColor: trendDays === d ? '#0F2044' : '#E5E7EB',
                 }}
               >
-                {d} يوم
+                {d} {c.dayUnit}
               </button>
             ))}
           </div>
         </div>
 
         {trendLoading ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#6B7280' }}>جاري التحميل...</div>
+          <div style={{ textAlign: 'center', padding: '40px', color: '#6B7280' }}>{c.loading}</div>
         ) : trend.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#9CA3AF' }}>لا توجد بيانات</div>
+          <div style={{ textAlign: 'center', padding: '40px', color: '#9CA3AF' }}>{c.noData}</div>
         ) : (
           <>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '160px', padding: '0 4px' }}>
@@ -118,7 +164,7 @@ function AnalyticsPage() {
                   <div
                     key={t.date}
                     style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'default' }}
-                    title={`${new Date(t.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', timeZone: 'UTC' })}: ${t.bookings} حجز`}
+                    title={`${new Date(t.date).toLocaleDateString(c.locale, { day: 'numeric', month: 'short', timeZone: 'UTC' })}: ${t.bookings} ${c.bookingTooltip}`}
                   >
                     {t.bookings > 0 && <div style={{ fontSize: '9px', color: '#9CA3AF' }}>{t.bookings}</div>}
                     <div style={{
@@ -136,7 +182,7 @@ function AnalyticsPage() {
                 const showLabel = trendDays === '7' || i % 7 === 0;
                 return (
                   <div key={t.date} style={{ flex: 1, textAlign: 'center', fontSize: '9px', color: '#9CA3AF' }}>
-                    {showLabel ? new Date(t.date).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : ''}
+                    {showLabel ? new Date(t.date).toLocaleDateString(c.locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }) : ''}
                   </div>
                 );
               })}
@@ -147,10 +193,10 @@ function AnalyticsPage() {
         {/* No-show rate vs platform avg */}
         {!isLoading && stats.no_show_rate_pct !== undefined && (
           <div style={{ marginTop: '24px', borderTop: '1px solid #F0F0F0', paddingTop: '20px' }}>
-            <div style={{ fontWeight: 700, fontSize: '14px', color: '#0F2044', marginBottom: '14px' }}>نسبة الغياب مقارنة بالمنصة</div>
+            <div style={{ fontWeight: 700, fontSize: '14px', color: '#0F2044', marginBottom: '14px' }}>{c.noShowTitle}</div>
             {[
-              { label: 'صالونك / مطعمك', pct: stats.no_show_rate_pct ?? 0, color: (stats.no_show_rate_pct ?? 0) > PLATFORM_AVG_NO_SHOW ? '#D32F2F' : '#1B8A7A' },
-              { label: 'متوسط المنصة', pct: PLATFORM_AVG_NO_SHOW, color: '#9CA3AF' },
+              { label: c.myBusiness, pct: stats.no_show_rate_pct ?? 0, color: (stats.no_show_rate_pct ?? 0) > PLATFORM_AVG_NO_SHOW ? '#D32F2F' : '#1B8A7A' },
+              { label: c.platformAvg, pct: PLATFORM_AVG_NO_SHOW, color: '#9CA3AF' },
             ].map((item) => (
               <div key={item.label} style={{ marginBottom: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>

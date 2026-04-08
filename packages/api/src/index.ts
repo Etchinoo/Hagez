@@ -26,6 +26,9 @@ import { startNoShowDetectionJob, startSlotHoldExpiryJob } from './jobs/no-show-
 import { startDailyPayoutJob } from './jobs/payout.js';
 import { startDailySummaryJob } from './jobs/daily-summary.js';
 import { startReviewModerationJob } from './jobs/review-moderation.js';
+import { startLoyaltyExpiryJob } from './jobs/loyalty-expiry.js';
+import { startFeaturedExpiryJob } from './jobs/featured-expiry.js';
+import { startPiiPurgeJob } from './jobs/pii-purge.js';
 import { startNotificationWorker } from './workers/notification-worker.js';
 
 const fastify = Fastify({
@@ -136,6 +139,9 @@ async function start() {
     startDailyPayoutJob(db);           // US-036: 23:00 Africa/Cairo
     startDailySummaryJob(db);          // US-059: 09:00 Africa/Cairo daily email
     startReviewModerationJob(db);      // US-076: every 10 min — auto-approve / spam-reject reviews
+    startLoyaltyExpiryJob(db);         // US-113 (EP-16): 02:00 Africa/Cairo — expire 18-month-old points
+    startFeaturedExpiryJob(db);        // US-116 (EP-17): hourly — expire featured listings past end date
+    startPiiPurgeJob(db);              // US-084 (EP-19): 1st of month 02:00 — PDPL 24-month PII purge
     startNotificationWorker(db);       // US-050: SQS notification delivery worker
   } catch (err) {
     console.error('Failed to start server:', err);

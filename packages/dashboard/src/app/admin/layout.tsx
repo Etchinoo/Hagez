@@ -7,9 +7,10 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useDashboardAuth } from '@/store/auth';
+import { useRoleGuard } from '@/lib/rbac';
 
 const NAV_ITEMS = [
   { href: '/admin/health',     label: 'Platform Health', icon: '📊' },
@@ -17,29 +18,16 @@ const NAV_ITEMS = [
   { href: '/admin/disputes',   label: 'Disputes',        icon: '⚖️' },
   { href: '/admin/reviews',    label: 'Reviews',         icon: '⭐' },
   { href: '/admin/refunds',    label: 'Refunds',         icon: '↩️' },
+  { href: '/admin/services',   label: 'Service Catalog', icon: '🗂️' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
   const pathname = usePathname();
-  const { user, isAuthenticated, logout } = useDashboardAuth();
-  const [hydrated, setHydrated] = useState(false);
+  const { user, logout } = useDashboardAuth();
+  const { allowed } = useRoleGuard('admin');
 
-  useEffect(() => { setHydrated(true); }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!isAuthenticated) {
-      router.replace('/login');
-      return;
-    }
-    if (user && user.role !== 'admin' && user.role !== 'super_admin') {
-      router.replace('/');
-    }
-  }, [hydrated, isAuthenticated, user, router]);
-
-  if (!hydrated || !isAuthenticated || !user) return null;
-  if (user.role !== 'admin' && user.role !== 'super_admin') return null;
+  if (!allowed) return null;
 
   const handleLogout = () => { logout(); router.push('/login'); };
 
@@ -50,7 +38,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div style={styles.logoArea}>
           <div style={styles.logoMark} />
           <div>
-            <div style={styles.logoText}>Super Reservation</div>
+            <div style={styles.logoText}>Hagez</div>
             <div style={styles.logoSub}>Admin Console</div>
           </div>
         </div>

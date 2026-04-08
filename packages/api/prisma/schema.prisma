@@ -25,6 +25,27 @@ datasource db {
 enum LoyaltyTransactionType {
   earn
   redeem
+  expire
+}
+
+enum LoyaltyTier {
+  bronze
+  silver
+  gold
+  platinum
+}
+
+enum FeaturedPlan {
+  starter_7   // 7 days  — 299 EGP
+  growth_14   // 14 days — 499 EGP
+  pro_30      // 30 days — 799 EGP
+}
+
+enum FeaturedListingStatus {
+  pending_payment
+  active
+  expired
+  cancelled
 }
 
 enum UserRole {
@@ -166,6 +187,31 @@ enum ResourceType {
   bay          // Car wash bay
 }
 
+// EP-21: Vehicle size classification for car wash bay routing
+enum VehicleSizeClass {
+  sedan
+  suv
+  pickup
+  van
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: vehicle_types (EP-21 — car wash vehicle data model)
+// Seed: sedan, suv, pickup, van
+// ─────────────────────────────────────────────────────────────
+
+model VehicleType {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name_ar     String           @db.VarChar(50)
+  name_en     String           @db.VarChar(50)
+  size_class  VehicleSizeClass
+  created_at  DateTime         @default(now()) @db.Timestamptz
+
+  bookings    Booking[]
+
+  @@map("vehicle_types")
+}
+
 // ─────────────────────────────────────────────────────────────
 // TABLE: users
 // ─────────────────────────────────────────────────────────────
@@ -180,6 +226,7 @@ model User {
   role                UserRole    @default(consumer)
   status              UserStatus  @default(active)
   loyalty_balance     Int         @default(0)  // US-079: 1 EGP deposit = 1 point
+  loyalty_tier        LoyaltyTier @default(bronze) // EP-16: tier computed on each earn/redeem
   no_show_count       Int         @default(0) @db.SmallInt
   deposit_mandatory   Boolean     @default(false)
   fcm_token           String?     // Firebase push token — updated on app open
@@ -190,14 +237,20 @@ model User {
   // US-067: social login (Apple Sign-In / Google)
   social_id           String?     @db.VarChar(255)
   social_provider     String?     @db.VarChar(20)
+  // EP-19: PDPL 2020 compliance fields
+  privacy_accepted_version String? @db.VarChar(20) // last accepted policy version
+  privacy_accepted_at      DateTime? @db.Timestamptz
+  deletion_requested_at    DateTime? @db.Timestamptz // set when user requests deletion
   created_at          DateTime    @default(now()) @db.Timestamptz
   updated_at          DateTime    @updatedAt @db.Timestamptz
 
   // Relations
-  owned_businesses    Business[]     @relation("BusinessOwner")
-  bookings            Booking[]      @relation("ConsumerBookings")
-  reviews             Review[]
-  loyalty_points      LoyaltyPoint[]
+  owned_businesses        Business[]               @relation("BusinessOwner")
+  bookings                Booking[]                @relation("ConsumerBookings")
+  reviews                 Review[]
+  loyalty_points          LoyaltyPoint[]
+  privacy_acceptances     PrivacyPolicyAcceptance[]
+  data_export_requests    DataExportRequest[]
 
   @@map("users")
 }
@@ -263,8 +316,14 @@ model Business {
   photos                          BusinessPhoto[]
   services                        BusinessService[]
   sections                        BusinessSection[]
+  pricing_rules                   PricingRule[]
+  court_config                    CourtConfig?
+  gaming_config                   GamingConfig?
+  car_wash_config                 CarWashConfig?
+  featured_listings               FeaturedListing[]
 
   @@index([district, category, status])
+  @@index([is_featured, featured_until]) // EP-17: fast featured query
   @@map("businesses")
 }
 
@@ -297,8 +356,9 @@ model Resource {
   capacity        Int           @default(1) @db.SmallInt
   photo_url       String?
   specialisations String[]      // For salon stylists: ["haircut", "colour", "treatment"]
-  is_active       Boolean       @default(true)
-  created_at      DateTime      @default(now()) @db.Timestamptz
+  is_active                Boolean       @default(true)
+  supports_large_vehicles  Boolean       @default(false) // Car wash bay: accepts SUV/Pickup/Van
+  created_at               DateTime      @default(now()) @db.Timestamptz
 
   business        Business      @relation(fields: [business_id], references: [id])
   slots           Slot[]
@@ -306,6 +366,43 @@ model Resource {
 
   @@index([business_id, type, is_active])
   @@map("resources")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: pricing_rules (EP-14 — dynamic pricing)
+// ─────────────────────────────────────────────────────────────
+
+enum PricingRuleType {
+  surge           // time-based multiplier
+  last_minute     // discount within N hours of slot
+  demand          // auto-multiplier when fill rate exceeds threshold
+}
+
+model PricingRule {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id       String          @db.Uuid
+  rule_type         PricingRuleType
+  name_ar           String          @db.VarChar(100)
+  // surge / demand fields
+  multiplier        Decimal?        @db.Decimal(4, 2)  // e.g. 1.50 = 50% increase
+  max_multiplier    Decimal?        @db.Decimal(4, 2)  // cap for demand-based
+  // time-of-week conditions (surge)
+  days_of_week      Int[]           // 0=Sun … 6=Sat; empty = all days
+  hour_start        Int?            @db.SmallInt       // 0–23
+  hour_end          Int?            @db.SmallInt       // 0–23 (exclusive)
+  // last-minute fields
+  minutes_before    Int?            @db.SmallInt       // apply discount if slot starts within N min
+  discount_pct      Decimal?        @db.Decimal(5, 2)  // e.g. 20.00 = 20% off
+  // demand-based opt-in threshold
+  fill_rate_pct     Int?            @db.SmallInt       // trigger at X% fill (70 or 90)
+  is_active         Boolean         @default(true)
+  created_at        DateTime        @default(now()) @db.Timestamptz
+
+  business          Business        @relation(fields: [business_id], references: [id])
+  bookings          Booking[]       @relation("PricingRuleBookings")
+
+  @@index([business_id, is_active])
+  @@map("pricing_rules")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -345,6 +442,74 @@ model BusinessSection {
 
   @@index([business_id, is_active])
   @@map("business_sections")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: court_configs (US-087 — Sports Court category config)
+// ─────────────────────────────────────────────────────────────
+
+model CourtConfig {
+  id                            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id                   String    @unique @db.Uuid
+  sport_types                   String[]  // ["football","basketball","tennis","padel","squash","volleyball"]
+  court_type                    String    @default("outdoor") @db.VarChar(20) // "indoor"|"outdoor"|"both"
+  surface_type                  String?   @db.VarChar(30)    // "grass"|"turf"|"hard"|"clay"
+  has_lighting                  Boolean   @default(false)
+  equipment_available           String[]  // ["balls","bibs","cones","vests","water"]
+  slot_duration_options         Int[]     // selectable durations in minutes: [60, 90, 120]
+  default_slot_duration_minutes Int       @default(60) @db.SmallInt
+  created_at                    DateTime  @default(now()) @db.Timestamptz
+  updated_at                    DateTime  @updatedAt @db.Timestamptz
+
+  business                      Business  @relation(fields: [business_id], references: [id])
+
+  @@map("court_configs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: gaming_configs (US-094 — Gaming Cafe category config)
+// ─────────────────────────────────────────────────────────────
+
+model GamingConfig {
+  id                            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id                   String    @unique @db.Uuid
+  station_types                 String[]  // ["pc","console","vr","group_room"]
+  has_group_rooms               Boolean   @default(false)
+  group_room_capacity           Int       @default(6) @db.SmallInt  // max seats per group room
+  genre_options                 String[]  // ["fps","rpg","sports","racing","casual","horror","moba"]
+  slot_duration_options         Int[]     // selectable durations in minutes: [60, 120, 180]
+  default_slot_duration_minutes Int       @default(60) @db.SmallInt
+  created_at                    DateTime  @default(now()) @db.Timestamptz
+  updated_at                    DateTime  @updatedAt @db.Timestamptz
+
+  business                      Business  @relation(fields: [business_id], references: [id])
+
+  @@map("gaming_configs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: car_wash_configs (US-101 — Car Wash category config)
+// ─────────────────────────────────────────────────────────────
+
+model CarWashConfig {
+  id                            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id                   String    @unique @db.Uuid
+  vehicle_types                 String[]  // legacy text array — superseded by vehicle_types table (EP-21)
+  service_packages              Json      // [{id:"basic",name_ar:"غسيل عادي",duration_min:30,price_egp:80},...]
+  allows_drop_off               Boolean   @default(true)
+  allows_wait                   Boolean   @default(true)
+  estimated_duration_minutes    Int       @default(30) @db.SmallInt // default estimate shown to consumer
+  slot_duration_options         Int[]     // selectable slot durations: [30, 60, 90]
+  default_slot_duration_minutes Int       @default(30) @db.SmallInt
+  // EP-21: per-vehicle pricing + duration overrides
+  price_by_vehicle              Json?     // {sedan:80, suv:120, pickup:130, van:110}
+  duration_by_vehicle           Json?     // {sedan:30, suv:45, pickup:45, van:40}
+  created_at                    DateTime  @default(now()) @db.Timestamptz
+  updated_at                    DateTime  @updatedAt @db.Timestamptz
+
+  business                      Business  @relation(fields: [business_id], references: [id])
+
+  @@map("car_wash_configs")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -403,6 +568,23 @@ model Booking {
   dispute_submitted_at  DateTime?       @db.Timestamptz
   // US-055: business internal notes (not visible to consumer)
   internal_notes        String?         @db.VarChar(1000)
+  // US-082/US-084: courts-only fields
+  sport_type            String?         @db.VarChar(30)   // "football"|"basketball"|"tennis"|"padel"|"squash"|"volleyball"
+  equipment_rental      String[]        @default([])      // selected equipment items from CourtConfig.equipment_available
+  // US-090/US-092: gaming-only fields
+  station_type          String?         @db.VarChar(20)   // "pc"|"console"|"vr"|"group_room"
+  genre_preference      String?         @db.VarChar(20)   // "fps"|"rpg"|"sports"|"racing"|"casual"|"horror"|"moba"
+  // US-096/US-097: car wash-only fields
+  vehicle_type          String?         @db.VarChar(20)   // legacy text; use vehicle_type_id (EP-21)
+  vehicle_type_id       String?         @db.Uuid          // EP-21: FK → vehicle_types.id
+  service_package       String?         @db.VarChar(30)   // "basic"|"premium"|"detailing"
+  drop_off              Boolean?                          // true=drop-off, false=wait
+  // EP-14: dynamic pricing fields
+  pricing_rule_id       String?         @db.Uuid
+  effective_multiplier  Decimal?        @db.Decimal(4, 2)  // multiplier applied at booking time
+  // EP-16: loyalty redemption fields
+  redeemed_points       Int             @default(0)        // points burned at checkout
+  points_discount_egp   Decimal         @default(0) @db.Decimal(10, 2) // EGP value deducted
   created_at            DateTime        @default(now()) @db.Timestamptz
 
   // Relations
@@ -415,6 +597,8 @@ model Booking {
   notifications       Notification[]
   status_logs         BookingStatusLog[]
   loyalty_points      LoyaltyPoint[]
+  pricing_rule        PricingRule?        @relation("PricingRuleBookings", fields: [pricing_rule_id], references: [id])
+  vehicle_type_ref    VehicleType?        @relation(fields: [vehicle_type_id], references: [id])
 
   @@index([consumer_id, status])
   @@index([business_id, status])
@@ -526,14 +710,138 @@ model Notification {
 model LoyaltyPoint {
   id               String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   user_id          String                  @db.Uuid
-  booking_id       String                  @db.Uuid
-  points           Int
+  booking_id       String?                 @db.Uuid  // null for expiry/admin transactions
+  points           Int                               // positive = earn, negative = redeem/expire
   transaction_type LoyaltyTransactionType
+  description_ar   String?                 @db.VarChar(200) // display label in Arabic
+  expires_at       DateTime?               @db.Timestamptz  // 18 months from earn date (EP-16, US-113)
   created_at       DateTime                @default(now()) @db.Timestamptz
 
   user             User                    @relation(fields: [user_id], references: [id])
-  booking          Booking                 @relation(fields: [booking_id], references: [id])
+  booking          Booking?                @relation(fields: [booking_id], references: [id])
 
   @@index([user_id])
+  @@index([expires_at])
   @@map("loyalty_points")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: featured_listings (EP-17 — US-115)
+// Tracks business owner featured placement purchases.
+// Plans: starter_7 (299 EGP/7d), growth_14 (499 EGP/14d), pro_30 (799 EGP/30d)
+// is_featured + featured_until on Business are the live flags,
+// updated by the admin approval flow and the expiry cron job.
+// ─────────────────────────────────────────────────────────────
+
+model FeaturedListing {
+  id                     String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id            String                @db.Uuid
+  plan                   FeaturedPlan
+  status                 FeaturedListingStatus @default(pending_payment)
+  price_egp              Decimal               @db.Decimal(10, 2)
+  starts_at              DateTime?             @db.Timestamptz // set on approval
+  ends_at                DateTime?             @db.Timestamptz // set on approval
+  paymob_order_id        String?               @db.VarChar(100)
+  paymob_transaction_id  String?               @db.VarChar(100)
+  approved_by_admin_id   String?               @db.Uuid
+  notes                  String?               @db.VarChar(500) // admin notes
+  created_at             DateTime              @default(now()) @db.Timestamptz
+  updated_at             DateTime              @updatedAt @db.Timestamptz
+
+  business               Business              @relation(fields: [business_id], references: [id])
+
+  @@index([business_id])
+  @@index([status, ends_at])
+  @@map("featured_listings")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: privacy_policy_acceptances (EP-19 — US-081)
+// Records each consumer's consent to the privacy policy.
+// Re-prompted when policy_version changes (PDPL 2020 Art.9).
+// ─────────────────────────────────────────────────────────────
+
+model PrivacyPolicyAcceptance {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String   @db.Uuid
+  policy_version String   @db.VarChar(20) // e.g. "1.0", "1.1"
+  accepted_at    DateTime @default(now()) @db.Timestamptz
+  ip_address     String?  @db.VarChar(45) // IPv4 or IPv6
+
+  user           User     @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@map("privacy_policy_acceptances")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: data_export_requests (EP-19 — US-083)
+// Queued PDPL Art.16 data export requests.
+// S3 presigned URL valid for 48 hours after completion.
+// Max 1 request per consumer per 30 days.
+// ─────────────────────────────────────────────────────────────
+
+enum DataExportStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+model DataExportRequest {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String           @db.Uuid
+  status        DataExportStatus @default(pending)
+  s3_key        String?          @db.VarChar(500) // S3 object key
+  download_url  String?          @db.VarChar(1000) // presigned URL (48h TTL)
+  expires_at    DateTime?        @db.Timestamptz
+  error_message String?          @db.VarChar(500)
+  metadata      Json?            // counts, field names logged at completion
+  created_at    DateTime         @default(now()) @db.Timestamptz
+  completed_at  DateTime?        @db.Timestamptz
+
+  user          User             @relation(fields: [user_id], references: [id])
+
+  @@index([user_id, created_at])
+  @@map("data_export_requests")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: service_catalog (Admin-defined service templates per category)
+// Business owners select from this catalog when configuring their services.
+// ─────────────────────────────────────────────────────────────
+
+model ServiceCatalog {
+  id                   String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category             BusinessCategory
+  name_ar              String           @db.VarChar(200)
+  name_en              String?          @db.VarChar(200)
+  typical_duration_min Int              @default(30) @db.SmallInt
+  is_active            Boolean          @default(true)
+  created_at           DateTime         @default(now()) @db.Timestamptz
+  updated_at           DateTime         @updatedAt @db.Timestamptz
+
+  @@index([category, is_active])
+  @@map("service_catalog")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: audit_logs (EP-19 — US-084)
+// Immutable log of admin actions + system compliance events.
+// Written to but never updated or deleted.
+// ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actor_id    String?  @db.Uuid  // admin user_id; null for system jobs
+  actor_type  String   @db.VarChar(30) // "admin" | "super_admin" | "system"
+  action      String   @db.VarChar(100) // e.g. "pii_purge", "dispute_resolved"
+  target_type String?  @db.VarChar(50)  // e.g. "booking", "user"
+  target_id   String?  @db.VarChar(100)
+  metadata    Json?    // arbitrary context (counts, field names, etc.)
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  @@index([actor_id])
+  @@index([action, created_at])
+  @@map("audit_logs")
 }

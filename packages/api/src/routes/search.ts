@@ -8,6 +8,7 @@
 // ============================================================
 
 import type { FastifyPluginAsync } from 'fastify';
+import { annotateSlotPrices } from '../services/pricing-engine.js';
 
 // ── Haversine distance (km) ────────────────────────────────────
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -179,7 +180,13 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         return { b, distanceKm, score };
       });
 
-      scored.sort((a, z) => z.score - a.score);
+      // EP-17 US-117: featured businesses float to top within their score band
+      scored.sort((a, z) => {
+        const featA = a.b.is_featured ? 1 : 0;
+        const featZ = z.b.is_featured ? 1 : 0;
+        if (featZ !== featA) return featZ - featA; // featured first
+        return z.score - a.score;
+      });
 
       const total = scored.length;
       const page_results = scored.slice(offset, offset + limitNum);
@@ -194,22 +201,84 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
           rating_avg: Number(b.rating_avg),
           review_count: b.review_count,
           is_featured: b.is_featured,
+          featured_badge_ar: b.is_featured ? '⭐ مميز' : null,
           photos: b.photos.map((p) => p.url),
           distance_km: distanceKm !== null ? Math.round(distanceKm * 10) / 10 : null,
           next_available_slots: b.slots
             .filter((s) => s.status === 'available')
             .slice(0, 3)
-            .map((s) => ({
-              id: s.id,
-              start_time: s.start_time.toISOString(),
-              end_time: s.end_time.toISOString(),
-              available_capacity: s.capacity - s.booked_count,
-              deposit_amount: Number(s.deposit_amount),
-            })),
+            .map((s) => {
+              const base = Number(s.deposit_amount);
+              return {
+                id: s.id,
+                start_time: s.start_time.toISOString(),
+                end_time: s.end_time.toISOString(),
+                available_capacity: s.capacity - s.booked_count,
+                deposit_amount: base,
+                // EP-14: consumer-facing pricing (engine runs at slot detail; search shows base price)
+                effective_deposit: base,
+                pricing_badge_ar: null,
+              };
+            }),
         })),
         total,
         page: pageNum,
         has_more: offset + page_results.length < total,
+      });
+    }
+  );
+
+  // ── GET /search/featured (EP-17, US-117) ──────────────────
+  // Returns up to 6 currently featured businesses for the home screen carousel.
+
+  fastify.get<{ Querystring: { category?: string; limit?: string } }>(
+    '/search/featured',
+    { preHandler: fastify.authenticateOptional },
+    async (request, reply) => {
+      const { category, limit = '6' } = request.query;
+      const limitNum = Math.min(12, Math.max(1, parseInt(limit)));
+      const now = new Date();
+
+      const where: any = {
+        status: 'active',
+        is_featured: true,
+        featured_until: { gt: now },
+      };
+      if (category) where.category = category;
+
+      const businesses = await fastify.db.business.findMany({
+        where,
+        include: {
+          photos: { orderBy: { sort_order: 'asc' }, take: 1 },
+          slots: {
+            where: { start_time: { gte: now }, status: 'available' },
+            orderBy: { start_time: 'asc' },
+            take: 1,
+          },
+        },
+        orderBy: { rating_avg: 'desc' },
+        take: limitNum,
+      });
+
+      return reply.send({
+        featured: businesses.map((b) => ({
+          id: b.id,
+          name_ar: b.name_ar,
+          name_en: b.name_en,
+          category: b.category,
+          district: b.district,
+          rating_avg: Number(b.rating_avg),
+          review_count: b.review_count,
+          photo: b.photos[0]?.url ?? null,
+          featured_until: b.featured_until?.toISOString() ?? null,
+          next_slot: b.slots[0]
+            ? {
+                id: b.slots[0].id,
+                start_time: b.slots[0].start_time.toISOString(),
+                deposit_amount: Number(b.slots[0].deposit_amount),
+              }
+            : null,
+        })),
       });
     }
   );
@@ -263,6 +332,9 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         include: {
           photos: { orderBy: { sort_order: 'asc' } },
           resources: { where: { is_active: true } },
+          court_config: true,
+          gaming_config: true,
+          car_wash_config: true,
           slots: {
             where: { start_time: { gte: new Date() }, status: 'available' },
             orderBy: { start_time: 'asc' },
@@ -297,13 +369,27 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         location: { lat: Number(business.lat), lng: Number(business.lng) },
         photos: business.photos.map((p) => p.url),
         staff: business.category === 'salon' ? business.resources : [],
-        next_available_slots: business.slots.map((s) => ({
-          id: s.id,
-          start_time: s.start_time.toISOString(),
-          end_time: s.end_time.toISOString(),
-          available_capacity: s.capacity - s.booked_count,
-          deposit_amount: Number(s.deposit_amount),
-        })),
+        courts: business.category === 'court' ? business.resources : [],
+        court_config: business.category === 'court' ? business.court_config : undefined,
+        stations: business.category === 'gaming_cafe' ? business.resources : [],
+        gaming_config: business.category === 'gaming_cafe' ? business.gaming_config : undefined,
+        bays: business.category === 'car_wash' ? business.resources : [],
+        car_wash_config: business.category === 'car_wash' ? business.car_wash_config : undefined,
+        next_available_slots: await (async () => {
+          const pricingMap = await annotateSlotPrices(fastify.db, business.id, business.slots);
+          return business.slots.map((s) => {
+            const p = pricingMap.get(s.id);
+            return {
+              id: s.id,
+              start_time: s.start_time.toISOString(),
+              end_time: s.end_time.toISOString(),
+              available_capacity: s.capacity - s.booked_count,
+              deposit_amount: Number(s.deposit_amount),
+              effective_deposit: p?.effective_deposit ?? Number(s.deposit_amount),
+              pricing_badge_ar: p?.badge_ar ?? null,
+            };
+          });
+        })(),
       });
     }
   );

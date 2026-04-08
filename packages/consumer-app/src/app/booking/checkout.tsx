@@ -13,7 +13,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { searchApi, bookingApi } from '../../services/api';
+import { searchApi, bookingApi, loyaltyApi } from '../../services/api';
 
 const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
@@ -155,6 +155,18 @@ export default function CheckoutScreen() {
     overrideConsumerOverlap: false,
   });
 
+  // US-113 (EP-16): Loyalty redemption state
+  const [usePoints, setUsePoints] = useState(false);
+  const { data: loyaltySummary } = useQuery({
+    queryKey: ['loyalty-summary'],
+    queryFn: () => loyaltyApi.getSummary().then((r) => r.data),
+  });
+  const availablePoints  = loyaltySummary?.balance ?? 0;
+  const MIN_REDEEM       = 100;
+  const pointsToRedeem   = usePoints && availablePoints >= MIN_REDEEM
+    ? Math.floor(availablePoints / MIN_REDEEM) * MIN_REDEEM
+    : 0;
+
   // Held booking state (after POST /bookings)
   const [heldBooking, setHeldBooking] = useState<{
     booking_id: string;
@@ -162,6 +174,8 @@ export default function CheckoutScreen() {
     slot_hold_expires_at: string;
     total_amount_egp: number;
     deposit_amount_egp: number;
+    points_discount_egp: number;
+    redeemed_points: number;
     platform_fee_egp: number;
     paymob_order_id: string;
   } | null>(null);
@@ -196,6 +210,7 @@ export default function CheckoutScreen() {
         special_requests: booking.specialRequests || undefined,
         section_preference: booking.sectionPreference,
         override_consumer_overlap: booking.overrideConsumerOverlap,
+        redeem_points: pointsToRedeem > 0 ? pointsToRedeem : undefined,
       }).then((r) => r.data),
     onSuccess: (data) => {
       setHeldBooking(data);
@@ -414,6 +429,25 @@ export default function CheckoutScreen() {
               maxLength={200}
             />
             <Text style={styles.charCount}>{booking.specialRequests.length}/200</Text>
+
+            {/* US-113: Loyalty redemption toggle */}
+            {availablePoints >= MIN_REDEEM && (
+              <TouchableOpacity
+                style={[styles.loyaltyToggle, usePoints && styles.loyaltyToggleActive]}
+                onPress={() => setUsePoints((v) => !v)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.loyaltyToggleContent}>
+                  <Text style={styles.loyaltyToggleTitle}>
+                    🎁 استخدام نقاط الولاء
+                  </Text>
+                  <Text style={styles.loyaltyToggleSubtitle}>
+                    لديك {availablePoints} نقطة · خصم {pointsToRedeem * 0.05} ج.م
+                  </Text>
+                </View>
+                <View style={[styles.toggleDot, usePoints && styles.toggleDotActive]} />
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -452,6 +486,12 @@ export default function CheckoutScreen() {
               <View style={styles.divider} />
 
               <SummaryRow label="العربون" value={`${heldBooking.deposit_amount_egp} ج.م`} />
+              {heldBooking.points_discount_egp > 0 && (
+                <SummaryRow
+                  label={`خصم النقاط (${heldBooking.redeemed_points} نقطة)`}
+                  value={`-${heldBooking.points_discount_egp} ج.م`}
+                />
+              )}
               <SummaryRow label="رسوم الخدمة" value={`${heldBooking.platform_fee_egp} ج.م`} />
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>الإجمالي</Text>
@@ -586,6 +626,15 @@ const styles = StyleSheet.create({
   // Requests
   requestsInput: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14, padding: 16, fontFamily: 'Cairo-Regular', fontSize: 15, color: NAVY, minHeight: 120, textAlignVertical: 'top' },
   charCount: { fontFamily: 'Cairo-Regular', fontSize: 12, color: GRAY, textAlign: 'left', marginTop: 6 },
+
+  // Loyalty toggle (US-113)
+  loyaltyToggle: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14, padding: 16, marginTop: 16 },
+  loyaltyToggleActive: { borderColor: TEAL, backgroundColor: TEAL + '08' },
+  loyaltyToggleContent: { flex: 1, marginLeft: 12 },
+  loyaltyToggleTitle: { fontFamily: 'Cairo-Bold', fontSize: 14, color: NAVY, textAlign: 'right' },
+  loyaltyToggleSubtitle: { fontFamily: 'Cairo-Regular', fontSize: 12, color: GRAY, textAlign: 'right', marginTop: 2 },
+  toggleDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D1D5DB', backgroundColor: '#fff' },
+  toggleDotActive: { borderColor: TEAL, backgroundColor: TEAL },
 
   // Summary
   summaryCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },

@@ -27,12 +27,79 @@ const TEAL = '#1B8A7A';
 const GRAY = '#9CA3AF';
 const ORANGE = '#D4622A';  // restaurant accent
 const MAGENTA = '#C2185B'; // salon accent
+const GREEN  = '#2E7D32';   // court accent
+const PURPLE = '#6B21A8';   // gaming accent
+const CYAN   = '#0891B2';   // car wash accent
 
 function categoryColor(category: string) {
   if (category === 'restaurant') return ORANGE;
   if (category === 'salon') return MAGENTA;
+  if (category === 'court') return GREEN;
+  if (category === 'gaming_cafe') return PURPLE;
+  if (category === 'car_wash') return CYAN;
   return TEAL;
 }
+
+const VEHICLE_LABELS: Record<string, string> = {
+  sedan:      '🚗 سيدان',
+  suv:        '🚙 SUV',
+  truck:      '🚛 شاحنة',
+  motorcycle: '🏍️ موتوسيكل',
+};
+
+const STATION_LABELS: Record<string, string> = {
+  pc:         'كمبيوتر PC',
+  console:    'بلايستيشن',
+  vr:         'واقع افتراضي VR',
+  group_room: 'غرفة جماعية',
+};
+
+const STATION_EMOJI: Record<string, string> = {
+  pc:         '🖥️',
+  console:    '🎮',
+  vr:         '🥽',
+  group_room: '👥',
+};
+
+const GENRE_LABELS: Record<string, string> = {
+  fps:    'إطلاق نار FPS',
+  rpg:    'أدوار RPG',
+  sports: 'رياضة',
+  racing: 'سباق',
+  casual: 'كاجوال',
+  horror: 'رعب',
+  moba:   'موبا MOBA',
+};
+
+const SPORT_LABELS: Record<string, string> = {
+  football: 'كرة القدم',
+  basketball: 'كرة السلة',
+  tennis: 'تنس',
+  padel: 'بادل',
+  squash: 'إسكواش',
+  volleyball: 'كرة الطائرة',
+};
+
+const COURT_TYPE_LABELS: Record<string, string> = {
+  indoor: 'مغطى',
+  outdoor: 'مكشوف',
+  both: 'مغطى ومكشوف',
+};
+
+const SURFACE_LABELS: Record<string, string> = {
+  grass: 'عشب طبيعي',
+  turf: 'عشب صناعي',
+  hard: 'أرضية صلبة',
+  clay: 'تراب',
+};
+
+const EQUIPMENT_LABELS: Record<string, string> = {
+  balls: 'كرات',
+  bibs: 'قمصان تدريب',
+  cones: 'أقماع',
+  vests: 'صدريات',
+  water: 'مياه',
+};
 
 // ── Skeleton ──────────────────────────────────────────────────
 
@@ -135,16 +202,37 @@ function SlotChip({
     minute: '2-digit',
     timeZone: 'Africa/Cairo',
   });
+
+  const effectiveDeposit = slot.effective_deposit ?? slot.deposit_amount;
+  const hasPricingBadge = !!slot.pricing_badge_ar;
+  const isPriceHigher = effectiveDeposit > slot.deposit_amount;
+  const isPriceLower  = effectiveDeposit < slot.deposit_amount;
+
   return (
     <TouchableOpacity
       style={[styles.slotChip, selected && styles.slotChipSelected]}
       onPress={onPress}
       activeOpacity={0.8}
     >
+      {hasPricingBadge && (
+        <Text style={styles.slotPricingBadge}>{slot.pricing_badge_ar}</Text>
+      )}
       <Text style={[styles.slotTime, selected && styles.slotTimeSelected]}>{time}</Text>
-      <Text style={[styles.slotDeposit, selected && styles.slotDepositSelected]}>
-        {slot.deposit_amount} ج.م
-      </Text>
+      <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 4 }}>
+        {isPriceHigher && (
+          <Text style={[styles.slotDepositStrike, selected && { color: 'rgba(255,255,255,0.5)' }]}>
+            {slot.deposit_amount} ج.م
+          </Text>
+        )}
+        <Text style={[
+          styles.slotDeposit,
+          selected && styles.slotDepositSelected,
+          isPriceLower && styles.slotDepositDiscount,
+          isPriceHigher && styles.slotDepositSurge,
+        ]}>
+          {effectiveDeposit} ج.م
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -184,10 +272,27 @@ export default function BusinessProfileScreen() {
   }
 
   function handleBookNow() {
-    router.push({
-      pathname: '/booking/checkout',
-      params: { business_id: id, slot_id: selectedSlotId ?? data.next_available_slots[0]?.id },
-    });
+    if (data.category === 'court') {
+      router.push({
+        pathname: '/booking/court-checkout',
+        params: { business_id: id },
+      });
+    } else if (data.category === 'gaming_cafe') {
+      router.push({
+        pathname: '/booking/gaming-checkout',
+        params: { business_id: id },
+      });
+    } else if (data.category === 'car_wash') {
+      router.push({
+        pathname: '/booking/car-wash-checkout',
+        params: { business_id: id },
+      });
+    } else {
+      router.push({
+        pathname: '/booking/checkout',
+        params: { business_id: id, slot_id: selectedSlotId ?? data.next_available_slots[0]?.id },
+      });
+    }
   }
 
   const selectedSlot =
@@ -219,7 +324,7 @@ export default function BusinessProfileScreen() {
         ) : (
           <View style={[styles.photoPlaceholder, { backgroundColor: accent + '22' }]}>
             <Text style={{ fontSize: 64 }}>
-              {data.category === 'restaurant' ? '🍽️' : '✂️'}
+              {data.category === 'restaurant' ? '🍽️' : data.category === 'court' ? '⚽' : data.category === 'gaming_cafe' ? '🎮' : data.category === 'car_wash' ? '🚗' : '✂️'}
             </Text>
           </View>
         )}
@@ -261,6 +366,156 @@ export default function BusinessProfileScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>عن المكان</Text>
               <Text style={styles.description}>{data.description_ar || data.description_en}</Text>
+            </View>
+          )}
+
+          {/* Court Info (court only — US-081) */}
+          {data.category === 'court' && data.court_config && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>تفاصيل الملعب</Text>
+
+              {/* Sport type badges */}
+              {data.court_config.sport_types?.length > 0 && (
+                <View style={styles.badgeRow}>
+                  {data.court_config.sport_types.map((s: string) => (
+                    <View key={s} style={[styles.sportBadge, { borderColor: GREEN + '66', backgroundColor: GREEN + '11' }]}>
+                      <Text style={[styles.sportBadgeText, { color: GREEN }]}>
+                        {SPORT_LABELS[s] ?? s}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Surface + lighting */}
+              <View style={styles.courtInfoRow}>
+                {data.court_config.surface_type && (
+                  <View style={styles.courtInfoItem}>
+                    <Ionicons name="football-outline" size={15} color={GRAY} />
+                    <Text style={styles.courtInfoText}>{SURFACE_LABELS[data.court_config.surface_type] ?? data.court_config.surface_type}</Text>
+                  </View>
+                )}
+                <View style={styles.courtInfoItem}>
+                  <Ionicons name="business-outline" size={15} color={GRAY} />
+                  <Text style={styles.courtInfoText}>{COURT_TYPE_LABELS[data.court_config.court_type] ?? data.court_config.court_type}</Text>
+                </View>
+                {data.court_config.has_lighting && (
+                  <View style={styles.courtInfoItem}>
+                    <Ionicons name="flashlight-outline" size={15} color={GRAY} />
+                    <Text style={styles.courtInfoText}>إضاءة ليلية</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Equipment */}
+              {data.court_config.equipment_available?.length > 0 && (
+                <View>
+                  <Text style={styles.courtEquipLabel}>المعدات المتاحة مجاناً</Text>
+                  <View style={styles.badgeRow}>
+                    {data.court_config.equipment_available.map((e: string) => (
+                      <View key={e} style={styles.equipBadge}>
+                        <Text style={styles.equipBadgeText}>{EQUIPMENT_LABELS[e] ?? e}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Car Wash Info (car_wash only — US-096) */}
+          {data.category === 'car_wash' && data.car_wash_config && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>تفاصيل الغسيل</Text>
+
+              {/* Vehicle type badges */}
+              {data.car_wash_config.vehicle_types?.length > 0 && (
+                <View style={styles.badgeRow}>
+                  {data.car_wash_config.vehicle_types.map((v: string) => (
+                    <View key={v} style={[styles.sportBadge, { borderColor: CYAN + '66', backgroundColor: CYAN + '11' }]}>
+                      <Text style={[styles.sportBadgeText, { color: CYAN }]}>
+                        {VEHICLE_LABELS[v] ?? v}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Service packages */}
+              {data.car_wash_config.service_packages?.length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={styles.courtEquipLabel}>الخدمات المتاحة</Text>
+                  {data.car_wash_config.service_packages.map((pkg: any) => (
+                    <View key={pkg.id} style={[styles.courtInfoRow, { justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#F3F4F6', paddingVertical: 8 }]}>
+                      <Text style={[styles.courtInfoText, { flex: 1 }]}>{pkg.name_ar}</Text>
+                      <Text style={[styles.courtInfoText, { color: CYAN, fontWeight: '600' }]}>{pkg.price_egp} ج.م</Text>
+                      <Text style={[styles.courtInfoText, { color: GRAY, marginRight: 12 }]}>~{pkg.duration_min} دقيقة</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Drop-off / wait */}
+              <View style={[styles.courtInfoRow, { marginTop: 8 }]}>
+                {data.car_wash_config.allows_drop_off && (
+                  <View style={styles.courtInfoItem}>
+                    <Ionicons name="car-outline" size={15} color={GRAY} />
+                    <Text style={styles.courtInfoText}>إيداع السيارة</Text>
+                  </View>
+                )}
+                {data.car_wash_config.allows_wait && (
+                  <View style={styles.courtInfoItem}>
+                    <Ionicons name="time-outline" size={15} color={GRAY} />
+                    <Text style={styles.courtInfoText}>انتظار أثناء الغسيل</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Gaming Info (gaming_cafe only — US-089) */}
+          {data.category === 'gaming_cafe' && data.gaming_config && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>تفاصيل الجيمنج</Text>
+
+              {/* Station type badges */}
+              {data.gaming_config.station_types?.length > 0 && (
+                <View style={styles.badgeRow}>
+                  {data.gaming_config.station_types.map((s: string) => (
+                    <View key={s} style={[styles.sportBadge, { borderColor: PURPLE + '66', backgroundColor: PURPLE + '11' }]}>
+                      <Text style={[styles.sportBadgeText, { color: PURPLE }]}>
+                        {STATION_EMOJI[s] ?? '🎮'} {STATION_LABELS[s] ?? s}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Group room info */}
+              {data.gaming_config.has_group_rooms && (
+                <View style={styles.courtInfoRow}>
+                  <View style={styles.courtInfoItem}>
+                    <Ionicons name="people-outline" size={15} color={GRAY} />
+                    <Text style={styles.courtInfoText}>
+                      غرف جماعية — حتى {data.gaming_config.group_room_capacity} لاعبين
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Genre options */}
+              {data.gaming_config.genre_options?.length > 0 && (
+                <View>
+                  <Text style={styles.courtEquipLabel}>أنواع الألعاب المتاحة</Text>
+                  <View style={styles.badgeRow}>
+                    {data.gaming_config.genre_options.map((g: string) => (
+                      <View key={g} style={styles.equipBadge}>
+                        <Text style={styles.equipBadgeText}>{GENRE_LABELS[g] ?? g}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
           )}
 
@@ -322,14 +577,19 @@ export default function BusinessProfileScreen() {
       {/* Sticky Book Now CTA */}
       <View style={styles.ctaContainer}>
         {selectedSlot && (
-          <Text style={styles.ctaSlotInfo}>
-            {new Date(selectedSlot.start_time).toLocaleTimeString('ar-EG', {
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'Africa/Cairo',
-            })}
-            {'  ·  '}مقدّم {selectedSlot.deposit_amount} ج.م
-          </Text>
+          <View style={{ alignItems: 'center', marginBottom: 10 }}>
+            {selectedSlot.pricing_badge_ar && (
+              <Text style={styles.ctaPricingBadge}>{selectedSlot.pricing_badge_ar}</Text>
+            )}
+            <Text style={styles.ctaSlotInfo}>
+              {new Date(selectedSlot.start_time).toLocaleTimeString('ar-EG', {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'Africa/Cairo',
+              })}
+              {'  ·  '}مقدّم {selectedSlot.effective_deposit ?? selectedSlot.deposit_amount} ج.م
+            </Text>
+          </View>
         )}
         <TouchableOpacity
           style={[styles.ctaBtn, { backgroundColor: accent }, data.next_available_slots.length === 0 && styles.ctaBtnDisabled]}
@@ -337,7 +597,9 @@ export default function BusinessProfileScreen() {
           disabled={data.next_available_slots.length === 0}
           activeOpacity={0.85}
         >
-          <Text style={styles.ctaBtnText}>احجز الآن</Text>
+          <Text style={styles.ctaBtnText}>
+            {data.category === 'court' ? 'احجز الملعب' : data.category === 'gaming_cafe' ? 'احجز المحطة' : data.category === 'car_wash' ? 'احجز الغسيل' : 'احجز الآن'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -426,11 +688,27 @@ const styles = StyleSheet.create({
   slotTimeSelected: { color: '#fff' },
   slotDeposit: { fontFamily: 'Cairo-Regular', fontSize: 12, color: GRAY, marginTop: 2 },
   slotDepositSelected: { color: 'rgba(255,255,255,0.85)' },
+  slotDepositDiscount: { color: '#16A34A', fontFamily: 'Cairo-Bold' },
+  slotDepositSurge: { color: '#DC2626', fontFamily: 'Cairo-Bold' },
+  slotDepositStrike: { fontFamily: 'Cairo-Regular', fontSize: 11, color: GRAY, textDecorationLine: 'line-through' },
+  slotPricingBadge: { fontFamily: 'Cairo-SemiBold', fontSize: 10, color: '#92400E', backgroundColor: '#FEF3C7', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginBottom: 4, textAlign: 'center' },
+  ctaPricingBadge: { fontFamily: 'Cairo-SemiBold', fontSize: 12, color: '#92400E', backgroundColor: '#FEF3C7', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, marginBottom: 6 },
 
   // No slots
   noSlots: { alignItems: 'center', paddingVertical: 24, backgroundColor: '#fff', borderRadius: 16, marginBottom: 24 },
   noSlotsText: { fontFamily: 'Cairo-Bold', fontSize: 16, color: NAVY },
   noSlotsSubtext: { fontFamily: 'Cairo-Regular', fontSize: 13, color: GRAY, marginTop: 6 },
+
+  // Court info (US-081)
+  badgeRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  sportBadge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  sportBadgeText: { fontFamily: 'Cairo-SemiBold', fontSize: 13 },
+  courtInfoRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 14, marginBottom: 12 },
+  courtInfoItem: { flexDirection: 'row-reverse', alignItems: 'center', gap: 4 },
+  courtInfoText: { fontFamily: 'Cairo-Regular', fontSize: 13, color: GRAY },
+  courtEquipLabel: { fontFamily: 'Cairo-SemiBold', fontSize: 13, color: NAVY, textAlign: 'right', marginBottom: 8 },
+  equipBadge: { borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#fff' },
+  equipBadgeText: { fontFamily: 'Cairo-Regular', fontSize: 12, color: '#374151' },
 
   // CTA
   ctaContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', padding: 20, paddingBottom: 34, borderTopWidth: 1, borderTopColor: '#F0F0F0', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 8 },
