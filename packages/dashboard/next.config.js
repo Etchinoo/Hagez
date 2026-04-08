@@ -1,9 +1,3 @@
-const withSerwist = require('@serwist/next').default({
-  swSrc: 'src/sw.ts',
-  swDest: 'public/sw.js',
-  disable: process.env.NODE_ENV === 'development',
-});
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -15,7 +9,9 @@ const nextConfig = {
     ],
   },
   // RTL/Arabic: handled via <html lang="ar" dir="rtl"> in layout.tsx
-  // i18n via next.config is not supported in App Router
+  // Serwist (PWA): temporarily disabled — @serwist/next@9 webpack plugin
+  // crashes Next.js 15.5 compilation on Linux. Re-enable after upgrading
+  // to @serwist/next@10 which adds Next.js 15 support.
 };
 
-module.exports = withSerwist(nextConfig);
+module.exports = nextConfig;

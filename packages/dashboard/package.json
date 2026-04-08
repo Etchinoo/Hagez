@@ -16,15 +16,15 @@
     "axios": "^1.6.0",
     "date-fns": "^3.6.0",
     "next": "^15.5.14",
-    "react": "^18",
-    "react-dom": "^18",
+    "react": "^19",
+    "react-dom": "^19",
     "serwist": "^9.5.7",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "typescript": "^5"
   }
 }
