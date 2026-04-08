@@ -1,5 +1,5 @@
 const withSerwist = require('@serwist/next').default({
-  swSrc: 'src/app/sw.ts',
+  swSrc: 'src/sw.ts',
   swDest: 'public/sw.js',
   disable: process.env.NODE_ENV === 'development',
 });
