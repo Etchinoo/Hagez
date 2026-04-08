@@ -140,7 +140,7 @@ function emptyForm(type: RuleType) {
   };
 }
 
-export function PricingPage() {
+function PricingPage() {
   const { toast } = useToast();
   const { dir, lang } = useLang();
   const c = COPY[lang];
