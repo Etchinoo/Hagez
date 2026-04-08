@@ -4,7 +4,7 @@
 // Rate limits: 100 req/min (unauth) | 300 req/min (authed)
 // ============================================================
 
-import Fastify from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
@@ -96,7 +96,7 @@ async function buildApp() {
 
   // ── Global Error Handler ───────────────────────────────────
 
-  fastify.setErrorHandler((error, _request, reply) => {
+  fastify.setErrorHandler((error: FastifyError, _request, reply) => {
     fastify.log.error(error);
 
     if (error.validation) {

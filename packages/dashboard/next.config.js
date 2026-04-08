@@ -1,15 +1,18 @@
-const withPWA = require('@ducanh2912/next-pwa').default({
-  dest: 'public',
+const withSerwist = require('@serwist/next').default({
+  swSrc: 'src/app/sw.ts',
+  swDest: 'public/sw.js',
   disable: process.env.NODE_ENV === 'development',
-  register: true,
-  skipWaiting: true,
 });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['cdn.reservr.eg', 'localhost'],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'cdn.reservr.eg' },
+      { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'https', hostname: 'localhost' },
+    ],
   },
   // RTL support — Arabic is default
   i18n: {
@@ -19,4 +22,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withPWA(nextConfig);
+module.exports = withSerwist(nextConfig);

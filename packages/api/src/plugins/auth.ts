@@ -2,14 +2,18 @@ import fp from 'fastify-plugin';
 import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import type { JwtAccessPayload, UserRole } from '../types/index.js';
 
+// @fastify/jwt v10: user payload is declared via FastifyJWT, not FastifyRequest
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    user: JwtAccessPayload;
+  }
+}
+
 declare module 'fastify' {
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     authenticateOptional: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireRole: (roles: UserRole[]) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
-  }
-  interface FastifyRequest {
-    user?: JwtAccessPayload;
   }
 }
 
