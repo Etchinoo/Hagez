@@ -45,10 +45,13 @@ async function buildApp() {
     contentSecurityPolicy: false, // Handled at CDN/API Gateway
   });
 
+  const defaultProdOrigins = ['https://app.reservr.eg', 'https://dashboard.reservr.eg', 'https://admin.reservr.eg'];
+  const corsOrigins = env.NODE_ENV === 'production'
+    ? (env.CORS_ORIGINS ? env.CORS_ORIGINS.split(',').map((o) => o.trim()) : defaultProdOrigins)
+    : true;
+
   await fastify.register(cors, {
-    origin: env.NODE_ENV === 'production'
-      ? ['https://app.reservr.eg', 'https://dashboard.reservr.eg', 'https://admin.reservr.eg']
-      : true,
+    origin: corsOrigins,
     credentials: true,
   });
 

@@ -54,6 +54,10 @@ const envSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM_NUMBER: z.string().optional(),
 
+  // CORS — comma-separated list of allowed origins in production
+  // e.g. https://dashboard.reservr.eg,https://hagez.vercel.app
+  CORS_ORIGINS: z.string().optional(),
+
   // Sentry — optional in dev
   SENTRY_DSN: z.string().optional(),
 
