@@ -14,12 +14,8 @@ const nextConfig = {
       { protocol: 'https', hostname: 'localhost' },
     ],
   },
-  // RTL support — Arabic is default
-  i18n: {
-    locales: ['ar', 'en'],
-    defaultLocale: 'ar',
-    localeDetection: false,
-  },
+  // RTL/Arabic: handled via <html lang="ar" dir="rtl"> in layout.tsx
+  // i18n via next.config is not supported in App Router
 };
 
 module.exports = withSerwist(nextConfig);
