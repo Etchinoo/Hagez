@@ -34,11 +34,6 @@ const envSchema = z.object({
   DIALOG360_BASE_URL: z.string().url().default('https://waba.360dialog.io/v1'),
   DIALOG360_WABA_NUMBER: z.string().optional(),
 
-  // Firebase — optional in dev
-  FIREBASE_PROJECT_ID: z.string().optional(),
-  FIREBASE_CLIENT_EMAIL: z.string().email().optional(),
-  FIREBASE_PRIVATE_KEY: z.string().optional(),
-
   // AWS SQS — optional in dev
   AWS_REGION: z.string().default('me-south-1'),
   AWS_ACCESS_KEY_ID: z.string().optional(),

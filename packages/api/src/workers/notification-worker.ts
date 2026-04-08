@@ -18,26 +18,9 @@ import type { PrismaClient } from '@prisma/client';
 import axios from 'axios';
 import { env } from '../config/env.js';
 
-// ── Firebase Admin (push notifications) ─────────────────────
-// Lazy-initialised so the worker starts without Firebase creds in dev.
-let firebaseApp: import('firebase-admin').app.App | null = null;
-async function getFirebaseMessaging() {
-  if (!env.FIREBASE_PROJECT_ID || !env.FIREBASE_CLIENT_EMAIL || !env.FIREBASE_PRIVATE_KEY) {
-    return null;
-  }
-  if (!firebaseApp) {
-    const admin = await import('firebase-admin');
-    firebaseApp = admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: env.FIREBASE_PROJECT_ID,
-        clientEmail: env.FIREBASE_CLIENT_EMAIL,
-        privateKey: env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      }),
-    });
-  }
-  const admin = await import('firebase-admin');
-  return admin.messaging(firebaseApp);
-}
+// ── Expo Push Notifications ──────────────────────────────────
+import { Expo } from 'expo-server-sdk';
+const expo = new Expo();
 
 // ── SQS Client ───────────────────────────────────────────────
 const sqs = new SQSClient({ region: env.AWS_REGION });
@@ -201,40 +184,37 @@ async function deliverPush(
   templateKey: string,
   payload: Record<string, unknown>
 ): Promise<void> {
-  const messaging = await getFirebaseMessaging();
-  if (!messaging) {
-    console.warn('[notification-worker] Firebase not configured — skipping push delivery');
-    await db.notification.update({ where: { id: notificationId }, data: { status: 'sent' } });
-    return;
-  }
-
-  // Resolve FCM token
-  let fcmToken: string | null = null;
+  // Resolve Expo push token
+  let expoPushToken: string | null = null;
   if (recipientType === 'consumer') {
-    const user = await db.user.findUnique({ where: { id: recipientId }, select: { fcm_token: true } });
-    fcmToken = user?.fcm_token ?? null;
+    const user = await db.user.findUnique({ where: { id: recipientId }, select: { expo_push_token: true } });
+    expoPushToken = user?.expo_push_token ?? null;
   } else {
     const biz = await db.business.findUnique({
       where: { id: recipientId },
-      select: { owner: { select: { fcm_token: true } } },
+      select: { owner: { select: { expo_push_token: true } } },
     });
-    fcmToken = biz?.owner.fcm_token ?? null;
+    expoPushToken = biz?.owner.expo_push_token ?? null;
   }
 
-  if (!fcmToken) {
-    // No token registered — mark sent (not an error)
+  if (!expoPushToken || !Expo.isExpoPushToken(expoPushToken)) {
+    // No valid token registered — mark sent (not an error)
     await db.notification.update({ where: { id: notificationId }, data: { status: 'sent' } });
     return;
   }
 
   const { title, body } = buildPushContent(templateKey, payload);
-  const messageId = await messaging.send({
-    token: fcmToken,
-    notification: { title, body },
-    data: { template_key: templateKey, notification_id: notificationId },
-    android: { priority: 'high' },
-    apns: { payload: { aps: { sound: 'default' } } },
-  });
+  const [ticket] = await expo.sendPushNotificationsAsync([
+    {
+      to: expoPushToken,
+      sound: 'default',
+      title,
+      body,
+      data: { template_key: templateKey, notification_id: notificationId },
+    },
+  ]);
+
+  const messageId = ticket.status === 'ok' ? ticket.id : `error:${(ticket as { details?: { error?: string } }).details?.error ?? 'unknown'}`;
 
   await db.notification.update({
     where: { id: notificationId },

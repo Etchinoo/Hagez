@@ -229,7 +229,7 @@ model User {
   loyalty_tier        LoyaltyTier @default(bronze) // EP-16: tier computed on each earn/redeem
   no_show_count       Int         @default(0) @db.SmallInt
   deposit_mandatory   Boolean     @default(false)
-  fcm_token           String?     // Firebase push token — updated on app open
+  expo_push_token     String?     // Expo push token — updated on app open / login
   paymob_card_token   String?     @db.VarChar(200) // US-031: tokenised card for no-show protection
   // US-046: notification opt-outs
   notify_whatsapp     Boolean     @default(true)

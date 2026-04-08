@@ -346,7 +346,7 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
             email:             null,
             profile_photo_url: null,
             paymob_card_token: null,
-            fcm_token:         null,
+            expo_push_token:   null,
             social_id:         null,
             status:            'deleted',
             deletion_requested_at: now,
@@ -374,6 +374,30 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
         deleted: true,
         message_ar: 'تم حذف حسابك وبياناتك الشخصية. تاريخ حجوزاتك محفوظ بشكل مجهول الهوية لأغراض المحاسبة.',
       });
+    }
+  );
+
+  // ── POST /users/me/push-token ────────────────────────────────
+  // Called by the mobile app on login and on app foreground.
+  // Stores the Expo push token so the notification worker can deliver push notifications.
+
+  fastify.post(
+    '/users/me/push-token',
+    { preHandler: fastify.authenticate },
+    async (request, reply) => {
+      const { sub } = request.user as JwtAccessPayload;
+      const { expo_push_token } = request.body as { expo_push_token: string };
+
+      if (!expo_push_token || typeof expo_push_token !== 'string') {
+        return reply.code(400).send({ error: { code: 'INVALID_TOKEN', message_ar: 'رمز الإشعار غير صالح.' } });
+      }
+
+      await fastify.db.user.update({
+        where: { id: sub },
+        data:  { expo_push_token },
+      });
+
+      return reply.code(204).send();
     }
   );
 
