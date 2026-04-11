@@ -69,11 +69,34 @@ export interface NotificationPayload {
   dispute_window_ends_at?: string;
   payout_amount?: number;
   payout_eta?: string;
-  refund_amount?: number;
+  refund_amount?: number | null;
+  refund_eta?: string | null;
   refund_eta_days?: number;
   credit_amount?: number;
   maps_link?: string;
   time_ar?: string;
+  // Category-specific enrichments (court/gaming/car wash)
+  sport_type_ar?: string;
+  station_type_ar?: string;
+  vehicle_type_ar?: string;
+  service_package_ar?: string;
+  drop_off_ar?: string;
+  duration_ar?: string;
+  player_count?: number;
+  // Payment receipt
+  deposit_amount?: number;
+  platform_fee?: number;
+  total_amount?: number;
+  refund_policy_hours?: number;
+  receipt_link?: string;
+  // Cancellation / refund
+  deposit_forfeited?: boolean;
+  // Dispute
+  sla_hours?: number;
+  outcome_ar?: string;
+  resolution?: string;
+  // Payout failure alert
+  amount_egp?: number;
 }
 
 // ── Search & Discovery ───────────────────────────────────────

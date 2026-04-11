@@ -639,7 +639,6 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     async (_request, reply) => {
       const now = new Date();
       const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
       const [
         bookingsLastHour,

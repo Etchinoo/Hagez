@@ -9,6 +9,29 @@ import axios from 'axios';
 import type { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 
+// ── Module-load Paymob env validation ────────────────────────
+// Paymob is optional in local dev, but required in staging/production.
+// Validate once at import time so the subsequent non-null assertions
+// are justified and the service fails fast on misconfiguration.
+const REQUIRED_PAYMOB_VARS = [
+  'PAYMOB_API_KEY',
+  'PAYMOB_HMAC_SECRET',
+  'PAYMOB_INTEGRATION_ID_CARD',
+  'PAYMOB_INTEGRATION_ID_FAWRY',
+  'PAYMOB_INTEGRATION_ID_VODAFONE',
+  'PAYMOB_INTEGRATION_ID_INSTAPAY',
+  'PAYMOB_INTEGRATION_ID_MEEZA',
+] as const;
+
+if (env.NODE_ENV !== 'development') {
+  const missing = REQUIRED_PAYMOB_VARS.filter((k) => !env[k]);
+  if (missing.length > 0) {
+    throw new Error(
+      `[payment] Missing required Paymob env vars in ${env.NODE_ENV}: ${missing.join(', ')}`
+    );
+  }
+}
+
 // ── Paymob Auth Token (cached, valid ~1h) ────────────────────
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
@@ -19,7 +42,7 @@ async function getPaymobAuthToken(): Promise<string> {
   }
 
   const res = await axios.post(`${env.PAYMOB_BASE_URL}/auth/tokens`, {
-    api_key: env.PAYMOB_API_KEY,
+    api_key: env.PAYMOB_API_KEY!,
   });
 
   cachedToken = {
@@ -34,13 +57,13 @@ async function getPaymobAuthToken(): Promise<string> {
 
 function getIntegrationId(paymentMethod: string): string {
   const map: Record<string, string> = {
-    card: env.PAYMOB_INTEGRATION_ID_CARD,
-    fawry: env.PAYMOB_INTEGRATION_ID_FAWRY,
-    vodafone_cash: env.PAYMOB_INTEGRATION_ID_VODAFONE,
-    instapay: env.PAYMOB_INTEGRATION_ID_INSTAPAY,
-    meeza: env.PAYMOB_INTEGRATION_ID_MEEZA,
+    card: env.PAYMOB_INTEGRATION_ID_CARD!,
+    fawry: env.PAYMOB_INTEGRATION_ID_FAWRY!,
+    vodafone_cash: env.PAYMOB_INTEGRATION_ID_VODAFONE!,
+    instapay: env.PAYMOB_INTEGRATION_ID_INSTAPAY!,
+    meeza: env.PAYMOB_INTEGRATION_ID_MEEZA!,
   };
-  return map[paymentMethod] ?? env.PAYMOB_INTEGRATION_ID_CARD;
+  return map[paymentMethod] ?? env.PAYMOB_INTEGRATION_ID_CARD!;
 }
 
 // ── Step 1: Create Paymob Order ──────────────────────────────
@@ -145,7 +168,7 @@ export function verifyPaymobWebhook(obj: Record<string, unknown>): boolean {
   }).join('');
 
   const computed = crypto
-    .createHmac('sha512', env.PAYMOB_HMAC_SECRET)
+    .createHmac('sha512', env.PAYMOB_HMAC_SECRET!)
     .update(hmacString)
     .digest('hex');
 

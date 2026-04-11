@@ -510,13 +510,7 @@ async function processDataExport(
       }),
     ]);
 
-    const exportPayload = {
-      exported_at:  new Date().toISOString(),
-      policy:       'PDPL 2020 — Article 16 Data Access Request',
-      profile:      user,
-      bookings,
-      reviews,
-    };
+    void user; // Payload shape reserved for S3 upload: { exported_at, policy, profile: user, bookings, reviews }
 
     // In production: upload JSON to S3, generate presigned URL
     // For dev: store payload reference inline

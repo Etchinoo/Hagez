@@ -552,6 +552,7 @@ model Booking {
   party_size          Int             @default(1) @db.SmallInt
   occasion            OccasionType?
   special_requests    String?         @db.VarChar(500)
+  section_preference  String?         @db.VarChar(50)  // US-023: restaurant section preference (e.g. indoor/outdoor/bar)
   status              BookingStatus   @default(pending_payment)
   deposit_amount      Decimal         @default(0.00) @db.Decimal(10, 2)
   platform_fee        Decimal         @default(0.00) @db.Decimal(10, 2)
@@ -563,6 +564,7 @@ model Booking {
   cancelled_at          DateTime?       @db.Timestamptz
   cancellation_reason   String?         @db.VarChar(100)
   reschedule_count      Int             @default(0) @db.SmallInt  // max 2 reschedules
+  rescheduled_at        DateTime?       @db.Timestamptz            // timestamp of most recent reschedule
   // US-040: dispute fields
   dispute_reason        String?         @db.VarChar(500)
   dispute_submitted_at  DateTime?       @db.Timestamptz

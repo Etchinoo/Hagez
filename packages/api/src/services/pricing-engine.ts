@@ -39,7 +39,6 @@ export async function applyPricingRules(
     return noChange(baseDeposit);
   }
 
-  const cairoNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Cairo' }));
   const slotCairo = new Date(slotStartTime.toLocaleString('en-US', { timeZone: 'Africa/Cairo' }));
   const minutesUntilSlot = Math.floor((slotStartTime.getTime() - Date.now()) / 60_000);
   const fillRate = slotCapacity > 0 ? Math.round((slotBookedCount / slotCapacity) * 100) : 0;

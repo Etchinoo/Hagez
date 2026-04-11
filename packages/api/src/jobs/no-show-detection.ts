@@ -9,7 +9,7 @@
 import { CronJob } from 'cron';
 import type { PrismaClient } from '@prisma/client';
 import { markNoShow } from '../services/booking-engine.js';
-import { sendNoShowNotifications, scheduleReviewPrompt } from '../services/notification.js';
+import { sendNoShowNotifications } from '../services/notification.js';
 import { executeNoShowSplit } from '../services/payment.js';
 import { env } from '../config/env.js';
 

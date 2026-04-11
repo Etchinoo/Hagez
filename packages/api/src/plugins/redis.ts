@@ -47,7 +47,7 @@ export async function acquireSlotLock(
   ttlSeconds: number = 480
 ): Promise<boolean> {
   const key = slotLockKey(slotId);
-  const result = await redis.set(key, bookingId, 'NX', 'PX', ttlSeconds * 1000);
+  const result = await redis.set(key, bookingId, 'PX', ttlSeconds * 1000, 'NX');
   return result === 'OK';
 }
 

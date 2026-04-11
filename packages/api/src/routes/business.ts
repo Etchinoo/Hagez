@@ -10,9 +10,7 @@
 // ============================================================
 
 import type { FastifyPluginAsync } from 'fastify';
-import { cancelBooking } from '../services/booking-engine.js';
-import { scheduleReviewPrompt, sendCancellationConfirmed, sendPayoutFailedAlert } from '../services/notification.js';
-import { initiateRefund } from '../services/payment.js';
+import { scheduleReviewPrompt } from '../services/notification.js';
 import { annotateSlotPrices, getPricingAnalytics } from '../services/pricing-engine.js';
 import { earnPoints } from '../services/loyalty.js';
 import type { JwtAccessPayload } from '../types/index.js';
