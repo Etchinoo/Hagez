@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /repo
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 COPY packages/api/package.json ./packages/api/
 
 RUN npm ci
@@ -26,7 +26,7 @@ WORKDIR /repo
 
 ENV NODE_ENV=production
 
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
 COPY packages/api/package.json ./packages/api/
 
 RUN npm ci --omit=dev
