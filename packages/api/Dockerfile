@@ -31,8 +31,8 @@ COPY packages/api/package.json ./packages/api/
 
 RUN npm ci --omit=dev
 
-COPY --from=builder /repo/packages/api/node_modules/.prisma ./packages/api/node_modules/.prisma
-COPY --from=builder /repo/packages/api/node_modules/@prisma ./packages/api/node_modules/@prisma
+COPY --from=builder /repo/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /repo/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY --from=builder /repo/packages/api/dist ./packages/api/dist
 COPY packages/api/prisma ./packages/api/prisma/
 
