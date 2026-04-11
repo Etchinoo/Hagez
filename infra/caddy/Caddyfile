@@ -1,0 +1,11 @@
+api.hagez.app {
+	encode gzip
+	reverse_proxy api:3000 {
+		health_uri /health
+		health_interval 30s
+	}
+	log {
+		output stdout
+		format console
+	}
+}

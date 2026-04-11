@@ -1,46 +1,52 @@
-# ============================================================
-# SUPER RESERVATION PLATFORM — API Production Dockerfile
-# Multi-stage: build TypeScript → run compiled JS
-# ============================================================
-
-# ── Stage 1: Build ──────────────────────────────────────────
 FROM node:20-slim AS builder
 
 RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /repo
 
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY packages/api/package.json ./packages/api/
+
 RUN npm ci
 
-COPY tsconfig.json ./
-COPY prisma ./prisma/
-COPY src ./src/
+COPY packages/api/tsconfig.json ./packages/api/
+COPY packages/api/prisma ./packages/api/prisma/
+COPY packages/api/src ./packages/api/src/
 
+WORKDIR /repo/packages/api
 RUN npx prisma generate
 RUN npm run build
 
-# ── Stage 2: Production runtime ─────────────────────────────
+
 FROM node:20-slim AS runner
 
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y openssl curl && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /repo
 
 ENV NODE_ENV=production
 
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY packages/api/package.json ./packages/api/
+
 RUN npm ci --omit=dev
 
-# Copy Prisma client (generated) and schema
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY prisma ./prisma/
+COPY --from=builder /repo/packages/api/node_modules/.prisma ./packages/api/node_modules/.prisma
+COPY --from=builder /repo/packages/api/node_modules/@prisma ./packages/api/node_modules/@prisma
+COPY --from=builder /repo/packages/api/dist ./packages/api/dist
+COPY packages/api/prisma ./packages/api/prisma/
 
-# Copy compiled output
-COPY --from=builder /app/dist ./dist
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs nodejs && \
+    chown -R nodejs:nodejs /repo
+
+USER nodejs
+
+WORKDIR /repo/packages/api
 
 EXPOSE 3000
 
-# Run migrations then start
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://localhost:3000/health || exit 1
+
+CMD ["node", "dist/index.js"]
