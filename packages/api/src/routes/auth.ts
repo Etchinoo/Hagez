@@ -39,7 +39,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       pipeline.expire(throttleKey, 600, 'NX'); // NX: only set TTL on first call
       await pipeline.exec();
 
-      // TODO: Replace with real random OTP when SMS (Twilio/360dialog) is integrated
+      // Legacy hardcoded OTP — kept for backward compatibility with mobile app.
+      // New clients should use POST /auth/firebase/verify (Firebase Phone Auth).
       const otp = '1111';
       const otpHash = await bcrypt.hash(otp, 10);
       const expiresAt = new Date(Date.now() + env.OTP_EXPIRY_SECONDS * 1000);
@@ -54,8 +55,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         data: { phone, otp_hash: otpHash, expires_at: expiresAt },
       });
 
-      // TODO: Send OTP via Twilio SMS
-      // In development, log OTP to console
+      // In development, log OTP to console (legacy endpoint — Firebase Phone Auth is preferred)
       if (env.NODE_ENV === 'development') {
         fastify.log.info({ phone, otp }, '📱 DEV OTP (do not log in production)');
       }
@@ -94,6 +94,99 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       if (!user) {
         user = await fastify.db.user.create({
           data: { phone, full_name: phone, language_pref: 'ar' },
+        });
+      }
+
+      // Attach business category for dashboard use
+      const business = await fastify.db.business.findFirst({
+        where: { owner_user_id: user.id },
+        select: { category: true },
+      });
+      const userWithMeta = { ...user, business_category: business?.category ?? null };
+
+      const accessToken = fastify.jwt.sign(
+        { sub: user.id, phone: user.phone, role: user.role },
+        { expiresIn: env.JWT_ACCESS_EXPIRY }
+      );
+      const refreshToken = fastify.jwt.sign(
+        { sub: user.id, phone: user.phone, role: user.role },
+        { expiresIn: env.JWT_REFRESH_EXPIRY }
+      );
+
+      return reply.send({ access_token: accessToken, refresh_token: refreshToken, user: userWithMeta });
+    }
+  );
+
+  // ── POST /auth/firebase/verify ──────────────────────────────
+  // Accepts a Firebase ID token (from client-side Phone Auth),
+  // verifies it via Firebase Admin SDK, upserts the user, and
+  // issues app JWTs.
+
+  fastify.post<{ Body: { idToken: string; full_name?: string } }>(
+    '/auth/firebase/verify',
+    async (request, reply) => {
+      const { idToken, full_name } = request.body;
+
+      if (!idToken) {
+        return reply.code(400).send({
+          error: {
+            code: 'MISSING_ID_TOKEN',
+            message: 'Firebase ID token is required.',
+            message_ar: 'رمز Firebase مطلوب.',
+          },
+        });
+      }
+
+      if (!fastify.firebaseAuth) {
+        return reply.code(503).send({
+          error: {
+            code: 'FIREBASE_NOT_CONFIGURED',
+            message: 'Firebase Auth is not configured on this server.',
+            message_ar: 'خدمة Firebase غير مفعّلة على الخادم.',
+          },
+        });
+      }
+
+      let decodedToken;
+      try {
+        decodedToken = await fastify.firebaseAuth.verifyIdToken(idToken);
+      } catch {
+        return reply.code(401).send({
+          error: {
+            code: 'INVALID_FIREBASE_TOKEN',
+            message: 'Firebase ID token is invalid or expired.',
+            message_ar: 'رمز Firebase غير صالح أو منتهي الصلاحية.',
+          },
+        });
+      }
+
+      const phone = decodedToken.phone_number;
+      if (!phone) {
+        return reply.code(400).send({
+          error: {
+            code: 'NO_PHONE_IN_TOKEN',
+            message: 'Firebase token does not contain a phone number.',
+            message_ar: 'رمز Firebase لا يحتوي على رقم هاتف.',
+          },
+        });
+      }
+
+      // Upsert user by phone
+      let user = await fastify.db.user.findUnique({ where: { phone } });
+      const isNewUser = !user;
+      if (!user) {
+        user = await fastify.db.user.create({
+          data: {
+            phone,
+            full_name: full_name ?? phone,
+            language_pref: 'ar',
+          },
+        });
+      } else if (full_name && isNewUser) {
+        // full_name only applied for new users
+        user = await fastify.db.user.update({
+          where: { id: user.id },
+          data: { full_name },
         });
       }
 

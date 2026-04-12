@@ -113,3 +113,5 @@ temp/
 
 # Claude Code local config
 .claude/
+hagez-9552a-firebase-adminsdk-fbsvc-efece91104.json
+*-firebase-adminsdk-*.json

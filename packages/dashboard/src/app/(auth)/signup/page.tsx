@@ -7,13 +7,15 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi, dashboardApi } from '@/services/api';
 import { useDashboardAuth } from '@/store/auth';
 import { useT, useLang } from '@/lib/i18n';
 import { useLanguage } from '@/store/language';
 import CountryCodeSelect, { buildFullPhone } from '@/components/CountryCodeSelect';
+import { signInWithPhoneNumber, RecaptchaVerifier, type ConfirmationResult } from 'firebase/auth';
+import { firebaseAuth } from '@/lib/firebase';
 
 type Step = 'phone' | 'otp' | 'details' | 'submitted';
 
@@ -41,6 +43,9 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
 
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
   const [tempTokens, setTempTokens] = useState<{ access_token: string; refresh_token: string } | null>(null);
 
   const [form, setForm] = useState({
@@ -54,7 +59,24 @@ export default function SignupPage() {
 
   const fullPhone = buildFullPhone(countryCode, phone);
 
-  // ── Step 1: Request OTP ──────────────────────────────────────
+  // Clean up recaptcha on unmount
+  useEffect(() => {
+    return () => {
+      recaptchaVerifierRef.current?.clear();
+    };
+  }, []);
+
+  const getRecaptchaVerifier = useCallback(() => {
+    if (recaptchaVerifierRef.current) {
+      recaptchaVerifierRef.current.clear();
+    }
+    recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
+      size: 'invisible',
+    });
+    return recaptchaVerifierRef.current;
+  }, []);
+
+  // ── Step 1: Request OTP via Firebase Phone Auth ──────────────
 
   const handleRequestOtp = async () => {
     if (!phone.trim()) {
@@ -68,7 +90,9 @@ export default function SignupPage() {
     setLoading(true);
     setError('');
     try {
-      await authApi.requestOtp(fullPhone);
+      const verifier = getRecaptchaVerifier();
+      const result = await signInWithPhoneNumber(firebaseAuth, fullPhone, verifier);
+      confirmationResultRef.current = result;
       setStep('otp');
     } catch {
       setError(t('auth_err_otp_failed'));
@@ -77,14 +101,20 @@ export default function SignupPage() {
     }
   };
 
-  // ── Step 2: Verify OTP ───────────────────────────────────────
+  // ── Step 2: Verify OTP via Firebase, then exchange for app JWT ─
 
   const handleVerifyOtp = async () => {
     if (!otp.trim()) { setError(t('auth_err_otp_required')); return; }
+    if (!confirmationResultRef.current) {
+      setError(t('auth_err_otp_failed'));
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      const res = await authApi.verifyOtp(fullPhone, otp);
+      const credential = await confirmationResultRef.current.confirm(otp);
+      const idToken = await credential.user.getIdToken();
+      const res = await authApi.verifyFirebaseToken(idToken);
       const { access_token, refresh_token, user } = res.data;
 
       if (user.role === 'business_owner') {
@@ -142,6 +172,7 @@ export default function SignupPage() {
 
   return (
     <div style={st.container} dir={dir}>
+      <div id="recaptcha-container" />
       <div style={st.card}>
 
         {/* Language toggle */}

@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useDashboardAuth } from '@/store/auth';
 import { authApi } from '@/services/api';
@@ -13,12 +13,13 @@ import { useT, useLang } from '@/lib/i18n';
 import { useLanguage } from '@/store/language';
 import CountryCodeSelect, { buildFullPhone } from '@/components/CountryCodeSelect';
 import Link from 'next/link';
+import { signInWithPhoneNumber, RecaptchaVerifier, type ConfirmationResult } from 'firebase/auth';
+import { firebaseAuth } from '@/lib/firebase';
 
 type Step = 'phone' | 'otp';
 
 export default function BusinessLoginPage() {
   const router = useRouter();
-  const login = useDashboardAuth((s) => s.loginWithOtp);
   const t = useT();
   const { dir, align } = useLang();
   const lang = useLanguage((s) => s.lang);
@@ -31,7 +32,27 @@ export default function BusinessLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
   const fullPhone = buildFullPhone(countryCode, phone);
+
+  // Clean up recaptcha on unmount
+  useEffect(() => {
+    return () => {
+      recaptchaVerifierRef.current?.clear();
+    };
+  }, []);
+
+  const getRecaptchaVerifier = useCallback(() => {
+    if (recaptchaVerifierRef.current) {
+      recaptchaVerifierRef.current.clear();
+    }
+    recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
+      size: 'invisible',
+    });
+    return recaptchaVerifierRef.current;
+  }, []);
 
   const handleRequestOtp = async () => {
     if (!phone.trim()) {
@@ -45,7 +66,9 @@ export default function BusinessLoginPage() {
     setLoading(true);
     setError('');
     try {
-      await authApi.requestOtp(fullPhone);
+      const verifier = getRecaptchaVerifier();
+      const result = await signInWithPhoneNumber(firebaseAuth, fullPhone, verifier);
+      confirmationResultRef.current = result;
       setStep('otp');
     } catch {
       setError(t('auth_err_otp_failed'));
@@ -59,15 +82,25 @@ export default function BusinessLoginPage() {
       setError(t('auth_err_otp_required'));
       return;
     }
+    if (!confirmationResultRef.current) {
+      setError(t('auth_err_otp_failed'));
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      await login(fullPhone, otp);
-      const authStore = (await import('@/store/auth')).useDashboardAuth.getState();
-      const role = authStore.user?.role ?? 'consumer';
+      const credential = await confirmationResultRef.current.confirm(otp);
+      const idToken = await credential.user.getIdToken();
+      const res = await authApi.verifyFirebaseToken(idToken);
+      const { access_token, refresh_token, user } = res.data;
+
+      const setSession = useDashboardAuth.getState().setSession;
+      setSession({ access_token, refresh_token }, user);
+
+      const role = user?.role ?? 'consumer';
       const destination = getLoginRedirect(role);
       if (!destination) {
-        authStore.logout();
+        useDashboardAuth.getState().logout();
         setError(t('auth_err_no_business'));
         setStep('phone');
       } else {
@@ -82,6 +115,7 @@ export default function BusinessLoginPage() {
 
   return (
     <div style={styles.container} dir={dir}>
+      <div id="recaptcha-container" />
       <div style={styles.card}>
         {/* Language toggle */}
         <div style={{ textAlign: dir === 'rtl' ? 'left' : 'right', marginBottom: '8px' }}>

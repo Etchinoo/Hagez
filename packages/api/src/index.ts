@@ -14,6 +14,7 @@ import { env } from './config/env.js';
 import databasePlugin from './plugins/database.js';
 import redisPlugin from './plugins/redis.js';
 import authPlugin from './plugins/auth.js';
+import firebasePlugin from './plugins/firebase.js';
 
 import authRoutes from './routes/auth.js';
 import usersRoutes from './routes/users.js';
@@ -91,6 +92,7 @@ async function buildApp() {
   await fastify.register(databasePlugin);
   await fastify.register(redisPlugin);
   await fastify.register(authPlugin);
+  await fastify.register(firebasePlugin);
 
   // ── Health Check (unauthenticated) ─────────────────────────
 

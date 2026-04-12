@@ -1,7 +1,6 @@
 // ============================================================
 // SUPER RESERVATION PLATFORM — Notification Worker
-// US-045: SMS fallback when WhatsApp undelivered within 60 s
-// US-050: SQS consumer — dispatches to 360dialog / Twilio / Firebase
+// US-050: SQS consumer — dispatches to 360dialog / Firebase Push
 //         Exponential back-off: 1 s → 2 s → 4 s (3 attempts total)
 //         On 3rd failure the message lands in the DLQ automatically
 //         (SQS maxReceiveCount = 3 configured via AWS console / IaC)
@@ -94,87 +93,8 @@ async function deliverWhatsApp(
     data: { status: 'sent', provider_message_id: providerMessageId, sent_at: new Date() },
   });
 
-  // US-045: schedule SMS fallback if WhatsApp undelivered within 60 s
-  scheduleSMSFallback(db, notificationId, templateKey, payload, phone);
 }
 
-// US-045: SMS fallback — fires 60 s after WhatsApp dispatch
-function scheduleSMSFallback(
-  db: PrismaClient,
-  notificationId: string,
-  templateKey: string,
-  payload: Record<string, unknown>,
-  phone: string
-): void {
-  setTimeout(async () => {
-    try {
-      const notification = await db.notification.findUnique({ where: { id: notificationId } });
-      // Only fall back if WhatsApp never reached 'delivered'
-      if (!notification || notification.status === 'delivered') return;
-
-      await deliverSMS(db, notificationId, phone, templateKey, payload, true);
-    } catch (err) {
-      console.error('[notification-worker] SMS fallback error', err);
-    }
-  }, 60_000);
-}
-
-async function deliverSMS(
-  db: PrismaClient,
-  notificationId: string,
-  phone: string,
-  templateKey: string,
-  payload: Record<string, unknown>,
-  isFallback = false
-): Promise<void> {
-  if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_FROM_NUMBER) {
-    console.warn('[notification-worker] Twilio not configured — skipping SMS delivery');
-    if (!isFallback) {
-      await db.notification.update({ where: { id: notificationId }, data: { status: 'sent' } });
-    }
-    return;
-  }
-
-  const body = buildSMSBody(templateKey, payload);
-  const formData = new URLSearchParams({
-    To: phone,
-    From: env.TWILIO_FROM_NUMBER,
-    Body: body,
-  });
-
-  const response = await axios.post(
-    `https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`,
-    formData.toString(),
-    {
-      auth: { username: env.TWILIO_ACCOUNT_SID, password: env.TWILIO_AUTH_TOKEN },
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      timeout: 10_000,
-    }
-  );
-
-  const sid: string = response.data?.sid ?? '';
-  if (!isFallback) {
-    await db.notification.update({
-      where: { id: notificationId },
-      data: { status: 'sent', provider_message_id: sid, sent_at: new Date() },
-    });
-  } else {
-    // Fallback — create a sibling notification record for audit
-    await db.notification.create({
-      data: {
-        recipient_id: (await db.notification.findUnique({ where: { id: notificationId }, select: { recipient_id: true } }))!.recipient_id,
-        recipient_type: (await db.notification.findUnique({ where: { id: notificationId }, select: { recipient_type: true } }))!.recipient_type,
-        booking_id: (await db.notification.findUnique({ where: { id: notificationId }, select: { booking_id: true } }))?.booking_id ?? null,
-        channel: 'sms',
-        template_key: `${templateKey}_sms_fallback`,
-        payload: payload as any,
-        status: 'sent',
-        provider_message_id: sid,
-        sent_at: new Date(),
-      },
-    });
-  }
-}
 
 async function deliverPush(
   db: PrismaClient,
@@ -311,13 +231,10 @@ async function processMessage(
         await deliverWhatsApp(db, parsed.notification_id, parsed.recipient_id, parsed.recipient_type, parsed.template_key, parsed.payload);
         break;
       case 'sms':
-        // Resolve phone first
-        const phone = await resolvePhone(db, parsed.recipient_id, parsed.recipient_type);
-        if (phone) {
-          await deliverSMS(db, parsed.notification_id, phone, parsed.template_key, parsed.payload);
-        } else {
-          await db.notification.update({ where: { id: parsed.notification_id }, data: { status: 'failed' } });
-        }
+        // SMS delivery removed (Twilio replaced by Firebase Phone Auth).
+        // SMS channel messages are now treated as no-op; mark as skipped.
+        console.warn('[notification-worker] SMS channel no longer supported — skipping', parsed.notification_id);
+        await db.notification.update({ where: { id: parsed.notification_id }, data: { status: 'sent' } });
         break;
       case 'push':
         await deliverPush(db, parsed.notification_id, parsed.recipient_id, parsed.recipient_type, parsed.template_key, parsed.payload);
@@ -344,23 +261,6 @@ async function deleteSQSMessage(receiptHandle: string): Promise<void> {
       ReceiptHandle: receiptHandle,
     })
   );
-}
-
-async function resolvePhone(
-  db: PrismaClient,
-  recipientId: string,
-  recipientType: 'consumer' | 'business'
-): Promise<string | null> {
-  if (recipientType === 'consumer') {
-    const user = await db.user.findUnique({ where: { id: recipientId }, select: { phone: true } });
-    return user?.phone ?? null;
-  } else {
-    const biz = await db.business.findUnique({
-      where: { id: recipientId },
-      select: { owner: { select: { phone: true } } },
-    });
-    return biz?.owner.phone ?? null;
-  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -449,22 +349,6 @@ function getBodyParams(templateKey: string, payload: Record<string, unknown>): s
       ];
     default:
       return [];
-  }
-}
-
-function buildSMSBody(templateKey: string, payload: Record<string, unknown>): string {
-  // Plain-text Arabic SMS — condensed versions of WhatsApp templates
-  switch (templateKey) {
-    case 'booking_confirmation_ar':
-      return `تم تأكيد حجزك في ${payload.business_name_ar} — ${payload.datetime_ar}\nرقم الحجز: ${payload.booking_ref}`;
-    case 'reminder_24h_ar':
-      return `تذكير: حجزك في ${payload.business_name_ar} غداً ${payload.datetime_ar}`;
-    case 'cancellation_confirmed_ar':
-      return `تم إلغاء حجزك ${payload.booking_ref} في ${payload.business_name_ar}.`;
-    case 'no_show_consumer_ar':
-      return `تم تسجيل غيابك عن حجز في ${payload.business_name_ar}. رسوم ${payload.penalty_amount} ج.م.`;
-    default:
-      return `إشعار من Reservr — ${templateKey}`;
   }
 }
 

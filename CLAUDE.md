@@ -75,7 +75,7 @@ Hesham Abdelaal, Senior PM at Robusta Technology Group. Working on the Super Res
 | **Fawry** | Cash payment method via Paymob integration |
 | **InstaPay** | Egyptian mobile payment method |
 | **360dialog** | WhatsApp Business API (booking confirmations, reminders) |
-| **Twilio** | SMS fallback + OTP delivery |
+| **Firebase Phone Auth** | OTP verification (10k free/month) |
 | **Firebase** | Push notifications (consumer app) |
 | **AWS SQS** | Notification queue + DLQ |
 | **AWS S3 + CloudFront** | Media storage + CDN (`cdn.reservr.eg`) |

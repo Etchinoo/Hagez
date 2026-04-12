@@ -49,10 +49,10 @@ const envSchema = z.object({
   // Google Maps — optional in dev
   GOOGLE_MAPS_API_KEY: z.string().optional(),
 
-  // Twilio (SMS fallback) — optional in dev
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN: z.string().optional(),
-  TWILIO_FROM_NUMBER: z.string().optional(),
+  // Firebase Phone Auth — optional in dev
+  FIREBASE_PROJECT_ID: z.string().optional(),
+  FIREBASE_CLIENT_EMAIL: z.string().optional(),
+  FIREBASE_PRIVATE_KEY: z.string().optional(),
 
   // CORS — comma-separated list of allowed origins in production
   // e.g. https://dashboard.reservr.eg,https://hagez.vercel.app

@@ -59,6 +59,8 @@ export const authApi = {
   requestOtp: (phone: string) => dashboardApi.post('/auth/otp/request', { phone }),
   verifyOtp: (phone: string, otp: string) =>
     dashboardApi.post('/auth/otp/verify', { phone, otp }),
+  verifyFirebaseToken: (idToken: string, full_name?: string) =>
+    dashboardApi.post('/auth/firebase/verify', { idToken, full_name }),
 };
 
 // ── Business Bookings ────────────────────────────────────────
