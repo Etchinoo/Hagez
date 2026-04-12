@@ -9,10 +9,10 @@ import axios from 'axios';
 import type { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
 
-// ── Module-load Paymob env validation ────────────────────────
-// Paymob is optional in local dev, but required in staging/production.
-// Validate once at import time so the subsequent non-null assertions
-// are justified and the service fails fast on misconfiguration.
+// ── Paymob config gate ───────────────────────────────────────
+// Paymob is optional at boot so the API can run without it during
+// initial deploy / smoke tests. Each payment entrypoint calls
+// requirePaymob() which throws a clear 503 error if unconfigured.
 const REQUIRED_PAYMOB_VARS = [
   'PAYMOB_API_KEY',
   'PAYMOB_HMAC_SECRET',
@@ -23,12 +23,21 @@ const REQUIRED_PAYMOB_VARS = [
   'PAYMOB_INTEGRATION_ID_MEEZA',
 ] as const;
 
-if (env.NODE_ENV !== 'development') {
-  const missing = REQUIRED_PAYMOB_VARS.filter((k) => !env[k]);
-  if (missing.length > 0) {
-    throw new Error(
-      `[payment] Missing required Paymob env vars in ${env.NODE_ENV}: ${missing.join(', ')}`
+const missingPaymobVars = REQUIRED_PAYMOB_VARS.filter((k) => !env[k]);
+
+if (missingPaymobVars.length > 0 && env.NODE_ENV !== 'development') {
+  console.warn(
+    `[payment] Paymob not configured in ${env.NODE_ENV}. Missing: ${missingPaymobVars.join(', ')}. Payment endpoints will 503 until set.`
+  );
+}
+
+function requirePaymob(): void {
+  if (missingPaymobVars.length > 0) {
+    const err = new Error(
+      `Payment service unavailable: Paymob is not configured (missing ${missingPaymobVars.join(', ')})`
     );
+    (err as Error & { statusCode?: number }).statusCode = 503;
+    throw err;
   }
 }
 
@@ -75,6 +84,7 @@ export async function createPaymobOrder(params: {
   consumer_phone: string;
   consumer_email?: string;
 }): Promise<{ order_id: string }> {
+  requirePaymob();
   const token = await getPaymobAuthToken();
   const amountCents = Math.round(params.amount_egp * 100);
 
@@ -110,6 +120,7 @@ export async function generatePaymentKey(params: {
   consumer_phone: string;
   consumer_email?: string;
 }): Promise<{ payment_key: string; iframe_url: string }> {
+  requirePaymob();
   const token = await getPaymobAuthToken();
   const amountCents = Math.round(params.amount_egp * 100);
   const integrationId = getIntegrationId(params.payment_method);
@@ -156,6 +167,7 @@ const HMAC_FIELDS = [
 ];
 
 export function verifyPaymobWebhook(obj: Record<string, unknown>): boolean {
+  requirePaymob();
   const receivedHmac = (obj['hmac'] as string) ?? '';
 
   const hmacString = HMAC_FIELDS.map((field) => {
@@ -193,6 +205,7 @@ export async function initiateRefund(params: {
   paymob_transaction_id: string;
   amount_egp: number;
 }): Promise<void> {
+  requirePaymob();
   const token = await getPaymobAuthToken();
 
   await axios.post(
