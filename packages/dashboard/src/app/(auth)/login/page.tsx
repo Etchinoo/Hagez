@@ -9,6 +9,9 @@ import { useRouter } from 'next/navigation';
 import { useDashboardAuth } from '@/store/auth';
 import { authApi } from '@/services/api';
 import { getLoginRedirect } from '@/lib/rbac';
+import { useT, useLang } from '@/lib/i18n';
+import { useLanguage } from '@/store/language';
+import CountryCodeSelect, { buildFullPhone } from '@/components/CountryCodeSelect';
 import Link from 'next/link';
 
 type Step = 'phone' | 'otp';
@@ -16,28 +19,36 @@ type Step = 'phone' | 'otp';
 export default function BusinessLoginPage() {
   const router = useRouter();
   const login = useDashboardAuth((s) => s.loginWithOtp);
+  const t = useT();
+  const { dir, align } = useLang();
+  const lang = useLanguage((s) => s.lang);
+  const setLang = useLanguage((s) => s.setLang);
+
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState('20');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const fullPhone = buildFullPhone(countryCode, phone);
+
   const handleRequestOtp = async () => {
     if (!phone.trim()) {
-      setError('يرجى إدخال رقم الهاتف.');
+      setError(t('auth_err_phone_required'));
       return;
     }
-    if (!/^\+\d{10,15}$/.test(phone.trim())) {
-      setError('رقم الهاتف غير صحيح. مثال: +201000000001');
+    if (!/^\+\d{10,15}$/.test(fullPhone)) {
+      setError(t('auth_err_phone_invalid'));
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await authApi.requestOtp(phone.trim());
+      await authApi.requestOtp(fullPhone);
       setStep('otp');
     } catch {
-      setError('فشل إرسال الكود. حاول مرة أخرى.');
+      setError(t('auth_err_otp_failed'));
     } finally {
       setLoading(false);
     }
@@ -45,65 +56,78 @@ export default function BusinessLoginPage() {
 
   const handleVerifyOtp = async () => {
     if (!otp.trim()) {
-      setError('يرجى إدخال كود التحقق.');
+      setError(t('auth_err_otp_required'));
       return;
     }
     setLoading(true);
     setError('');
     try {
-      await login(phone, otp);
-      // RBAC: redirect to the correct zone based on the verified role
+      await login(fullPhone, otp);
       const authStore = (await import('@/store/auth')).useDashboardAuth.getState();
       const role = authStore.user?.role ?? 'consumer';
       const destination = getLoginRedirect(role);
       if (!destination) {
-        // Consumer account — not allowed in any dashboard zone
         authStore.logout();
-        setError('هذا الحساب غير مرتبط بنشاط تجاري. تواصل مع فريق Hagez.');
+        setError(t('auth_err_no_business'));
         setStep('phone');
       } else {
         router.replace(destination);
       }
     } catch {
-      setError('الكود غير صحيح أو منتهي الصلاحية.');
+      setError(t('auth_err_otp_invalid'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={styles.container}>
+    <div style={styles.container} dir={dir}>
       <div style={styles.card}>
+        {/* Language toggle */}
+        <div style={{ textAlign: dir === 'rtl' ? 'left' : 'right', marginBottom: '8px' }}>
+          <button
+            onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+            style={styles.langToggle}
+          >
+            {t('auth_lang_toggle')}
+          </button>
+        </div>
+
         <div style={styles.logoBlock}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="Hagez" style={{ width: '100%', height: 'auto', marginBottom: '8px' }} />
-          <h1 style={styles.title}>لوحة تحكم الأعمال</h1>
+          <h1 style={styles.title}>{t('auth_business_dashboard')}</h1>
         </div>
 
         {step === 'phone' ? (
           <>
-            <label style={styles.label}>رقم الهاتف</label>
-            <input
-              style={styles.input}
-              type="tel"
-              name="phone"
-              autoComplete="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleRequestOtp()}
-              placeholder="+201XXXXXXXXX"
-              dir="ltr"
-              autoFocus
-            />
-            {error && <p style={styles.error}>{error}</p>}
+            <label style={{ ...styles.label, textAlign: align }}>{t('auth_phone_label')}</label>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', direction: 'ltr' }}>
+              <CountryCodeSelect value={countryCode} onChange={setCountryCode} />
+              <input
+                style={{ ...styles.input, flex: 1, marginBottom: 0 }}
+                type="tel"
+                name="phone"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleRequestOtp()}
+                placeholder={t('auth_phone_placeholder')}
+                dir="ltr"
+                autoFocus
+              />
+            </div>
+            {error && <p style={{ ...styles.error, textAlign: align }}>{error}</p>}
             <button style={styles.button} onClick={handleRequestOtp} disabled={loading}>
-              {loading ? 'جاري الإرسال...' : 'إرسال كود التحقق'}
+              {loading ? t('auth_sending') : t('auth_send_otp')}
             </button>
           </>
         ) : (
           <>
-            <p style={styles.sentTo}>أرسلنا الكود إلى {phone}</p>
-            <label style={styles.label}>كود التحقق</label>
+            <p style={{ ...styles.sentTo, textAlign: align }}>
+              {t('auth_otp_sent_to')} {fullPhone}
+            </p>
+            <label style={{ ...styles.label, textAlign: align }}>{t('auth_otp_label')}</label>
             <input
               style={{ ...styles.input, textAlign: 'center', letterSpacing: '12px', fontSize: '24px' }}
               type="text"
@@ -115,20 +139,20 @@ export default function BusinessLoginPage() {
               placeholder="1111"
               autoFocus
             />
-            {error && <p style={styles.error}>{error}</p>}
+            {error && <p style={{ ...styles.error, textAlign: align }}>{error}</p>}
             <button style={styles.button} onClick={handleVerifyOtp} disabled={loading}>
-              {loading ? 'جاري التحقق...' : 'تأكيد الدخول'}
+              {loading ? t('auth_verifying') : t('auth_confirm_login')}
             </button>
             <button style={styles.linkButton} onClick={() => { setStep('phone'); setOtp(''); }}>
-              تغيير رقم الهاتف
+              {t('auth_change_phone')}
             </button>
           </>
         )}
 
         {step === 'phone' && (
           <p style={styles.signupRow}>
-            نشاط تجاري جديد؟{' '}
-            <Link href="/signup" style={styles.signupLink}>سجّل هنا</Link>
+            {t('auth_new_business')}{' '}
+            <Link href="/signup" style={styles.signupLink}>{t('auth_signup_here')}</Link>
           </p>
         )}
       </div>
@@ -147,17 +171,15 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%', maxWidth: '440px', boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
   },
   logoBlock: { textAlign: 'center', marginBottom: '32px' },
-  logo: { width: '64px', height: '64px', borderRadius: '16px', background: '#0F2044', margin: '0 auto 16px' },
   title: { fontFamily: 'Cairo, sans-serif', fontSize: '22px', fontWeight: 700, color: '#0F2044', margin: 0 },
-  subtitle: { fontFamily: 'Cairo, sans-serif', fontSize: '14px', color: '#6B7280', marginTop: '4px' },
-  label: { display: 'block', fontFamily: 'Cairo, sans-serif', fontSize: '15px', fontWeight: 600, color: '#0F2044', marginBottom: '8px', textAlign: 'right' },
-  sentTo: { fontFamily: 'Cairo, sans-serif', fontSize: '14px', color: '#6B7280', textAlign: 'right', marginBottom: '16px' },
+  label: { display: 'block', fontFamily: 'Cairo, sans-serif', fontSize: '15px', fontWeight: 600, color: '#0F2044', marginBottom: '8px' },
+  sentTo: { fontFamily: 'Cairo, sans-serif', fontSize: '14px', color: '#6B7280', marginBottom: '16px' },
   input: {
     width: '100%', padding: '14px 16px', border: '1.5px solid #E5E7EB', borderRadius: '12px',
     fontFamily: 'Cairo, sans-serif', fontSize: '18px', color: '#0F2044',
-    outline: 'none', direction: 'rtl', boxSizing: 'border-box', marginBottom: '8px',
+    outline: 'none', boxSizing: 'border-box', marginBottom: '8px',
   },
-  error: { fontFamily: 'Cairo, sans-serif', fontSize: '14px', color: '#D32F2F', textAlign: 'right', marginBottom: '8px' },
+  error: { fontFamily: 'Cairo, sans-serif', fontSize: '14px', color: '#D32F2F', marginBottom: '8px' },
   button: {
     width: '100%', padding: '16px', background: '#1B8A7A', border: 'none', borderRadius: '12px',
     fontFamily: 'Cairo, sans-serif', fontSize: '17px', fontWeight: 700, color: '#fff',
@@ -173,4 +195,9 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center', marginTop: '20px',
   },
   signupLink: { color: '#1B8A7A', fontWeight: 700, textDecoration: 'none' },
+  langToggle: {
+    background: 'none', border: '1px solid #E5E7EB', borderRadius: '8px',
+    padding: '6px 14px', fontFamily: 'Cairo, sans-serif', fontSize: '13px',
+    color: '#0F2044', cursor: 'pointer',
+  },
 };

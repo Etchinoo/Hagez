@@ -7,6 +7,7 @@
 
 import type { Metadata, Viewport } from 'next';
 import { ToastProvider } from '@/components/Toast';
+import HtmlDirectionSync from '@/components/HtmlDirectionSync';
 
 export const metadata: Metadata = {
   title: 'لوحة التحكم | Hagez',
@@ -24,7 +25,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="en" dir="ltr" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -39,7 +40,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             font-family: 'Cairo', 'Inter', sans-serif;
             background-color: #F7F8FA;
             color: #0F2044;
-            direction: rtl;
           }
           :root {
             --navy: #0F2044;
@@ -52,7 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }
         ` }} />
       </head>
-      <body><ToastProvider>{children}</ToastProvider></body>
+      <body><HtmlDirectionSync /><ToastProvider>{children}</ToastProvider></body>
     </html>
   );
 }

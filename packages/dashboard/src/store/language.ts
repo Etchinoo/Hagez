@@ -15,8 +15,8 @@ interface LanguageState {
 export const useLanguage = create<LanguageState>((set) => ({
   lang:
     typeof window !== 'undefined'
-      ? ((localStorage.getItem('hagez_lang') as Lang | null) ?? 'ar')
-      : 'ar',
+      ? ((localStorage.getItem('hagez_lang') as Lang | null) ?? 'en')
+      : 'en',
   setLang: (lang) => {
     if (typeof window !== 'undefined') localStorage.setItem('hagez_lang', lang);
     set({ lang });
