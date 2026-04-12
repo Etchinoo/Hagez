@@ -45,13 +45,26 @@ async function buildApp() {
     contentSecurityPolicy: false, // Handled at CDN/API Gateway
   });
 
-  const defaultProdOrigins = ['https://app.reservr.eg', 'https://dashboard.reservr.eg', 'https://admin.reservr.eg'];
-  const corsOrigins = env.NODE_ENV === 'production'
+  const defaultProdOrigins = ['https://hagez.app', 'https://www.hagez.app'];
+  const rawOrigins = env.NODE_ENV === 'production'
     ? (env.CORS_ORIGINS ? env.CORS_ORIGINS.split(',').map((o) => o.trim()) : defaultProdOrigins)
+    : null;
+
+  // Each entry may be a literal origin ("https://hagez.app") or contain
+  // "*" as a wildcard for any path segment ("https://*.vercel.app").
+  const originMatchers: (string | RegExp)[] | true = rawOrigins
+    ? rawOrigins.map((entry) => {
+        if (entry.includes('*')) {
+          const pattern =
+            '^' + entry.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^.]+') + '$';
+          return new RegExp(pattern);
+        }
+        return entry;
+      })
     : true;
 
   await fastify.register(cors, {
-    origin: corsOrigins,
+    origin: originMatchers,
     credentials: true,
   });
 
