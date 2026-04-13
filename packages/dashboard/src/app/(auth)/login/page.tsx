@@ -70,8 +70,14 @@ export default function BusinessLoginPage() {
       const result = await signInWithPhoneNumber(firebaseAuth, fullPhone, verifier);
       confirmationResultRef.current = result;
       setStep('otp');
-    } catch {
-      setError(t('auth_err_otp_failed'));
+    } catch (err: unknown) {
+      console.error('[Firebase OTP] Send failed:', err);
+      const firebaseErr = err as { code?: string; message?: string };
+      setError(firebaseErr.code === 'auth/too-many-requests'
+        ? 'Too many attempts. Wait a few minutes.'
+        : firebaseErr.code === 'auth/invalid-phone-number'
+        ? 'Invalid phone number format.'
+        : `${t('auth_err_otp_failed')} (${firebaseErr.code ?? 'unknown'})`);
     } finally {
       setLoading(false);
     }
