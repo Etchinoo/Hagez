@@ -3,7 +3,7 @@
 // Single source of truth for role-based access control.
 //
 // Zones:
-//   'business' — business owner dashboard (/)
+//   'business' — business owner dashboard (/bookings)
 //   'admin'    — internal ops console (/admin)
 //
 // Usage:
@@ -22,7 +22,7 @@ export type RbacZone = 'business' | 'admin';
 
 // Where each role lands after login
 export const ROLE_HOME: Record<UserRole, string | null> = {
-  business_owner: '/',
+  business_owner: '/bookings',
   admin:          '/admin',
   super_admin:    '/admin',
   consumer:       null,   // not allowed in any dashboard zone

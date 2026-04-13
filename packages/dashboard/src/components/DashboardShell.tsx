@@ -19,7 +19,7 @@ import { useT, TRANSLATIONS, type TranslationKey } from '@/lib/i18n';
 const queryClient = new QueryClient();
 
 const NAV_ITEMS = [
-  { href: '/',          labelKey: 'nav_bookings'  as const, icon: '📅', categories: null },
+  { href: '/bookings',  labelKey: 'nav_bookings'  as const, icon: '📅', categories: null },
   { href: '/analytics', labelKey: 'nav_analytics' as const, icon: '📊', categories: null },
   { href: '/featured',  labelKey: 'nav_featured'  as const, icon: '⭐', categories: null },
   { href: '/staff',     labelKey: 'nav_staff'     as const, icon: '👤', categories: ['salon', 'restaurant', 'cafe', 'gaming_cafe'] },
@@ -74,7 +74,7 @@ function ShellInner({ children, pageTitle }: Props) {
 
         {/* Logo — fixed-height container, clickable → home */}
         <button
-          onClick={() => router.push('/')}
+          onClick={() => router.push('/bookings')}
           style={{
             width: '100%',
             height: sidebarOpen ? '56px' : '48px',

@@ -175,16 +175,45 @@ turbo run dev
 
 ```
 hagez.app
+├── Landing Page (/) — Portal 0 ✅
 ├── Consumer App (iOS/Android) — Portal 1
-├── Business Dashboard (/dashboard) — Portal 2, 3, 4, 5, 6
-│   ├── Restaurant (/dashboard/restaurant)
-│   ├── Salon (/dashboard/salon)
-│   ├── Sports Court (/dashboard/court) — Phase 2
-│   ├── Gaming Cafe (/dashboard/gaming) — Phase 2
-│   └── Car Wash (/dashboard/carwash) — Phase 2
+├── Business Dashboard (/bookings, /analytics, etc.) — Portal 2, 3, 4, 5, 6
+│   ├── Restaurant
+│   ├── Salon
+│   ├── Sports Court — Phase 2
+│   ├── Gaming Cafe — Phase 2
+│   └── Car Wash — Phase 2
+├── Login (/login) — shared entry point for all dashboard roles
 └── Admin Console (/admin) — Portal 7
     └── Super Admin Console (elevated permissions) — Portal 8
 ```
+
+### Portal 0: Landing Page (hagez.app)
+**Tech:** Next.js 15 App Router, built into `packages/dashboard`  
+**Route:** `/` (root of the dashboard package)  
+**File:** `packages/dashboard/src/app/page.tsx`  
+**Domain:** hagez.app (root)  
+**Status:** Phase 1 ✅ (built April 2026)  
+**Deployment:** Vercel (same as dashboard — single deployment)
+
+**Sections:**
+- Sticky navbar — logo, language toggle (AR/EN), "Sign In" dropdown
+- Hero — gradient (#0F2044 → #1B8A7A), "احجز لحظتك", dual CTA (Business Dashboard / Explore)
+- Features — 4 cards (instant booking, secure payments, smart scheduling, deposit protection)
+- Categories — 5 cards (restaurant, salon, court, gaming, carwash; Phase 2 marked "قريباً")
+- Sign-in CTA banner — links to /login and /signup
+- Footer — Navy bg, quick links, legal, copyright
+
+**Sign-In Dropdown (navbar):**
+- "لوحة تحكم العمل / Business Dashboard" → `/login` (business_owner role)
+- "بوابة الإدارة / Admin Portal" → `/login` (admin/super_admin role, RBAC redirects to /admin)
+- Both options use the same `/login` page — RBAC handles post-login redirect
+
+**Auth behaviour:**
+- Unauthenticated visitors: see the landing page
+- Authenticated business_owner: auto-redirected to `/bookings`
+- Authenticated admin/super_admin: auto-redirected to `/admin`
+- Language toggle: inline client-side state (AR default, syncs `<html dir>` for landing only)
 
 ### Portal 1: Consumer Mobile App (iOS + Android)
 **Tech:** React Native (Expo), TypeScript  
@@ -897,14 +926,23 @@ RATE_LIMIT_EXCEEDED — Too many requests
 - Date/time selection (7-day calendar, hourly slots, duration 1/2/3 hours, real-time check)
 - Checkout & payment (deposit 100%, Paymob integration)
 
+#### US-100–116: Hagez Landing Page ✅ (April 2026)
+- Landing page integrated into `packages/dashboard` at route `/` (no separate package)
+- Sections: Hero, Features (4), Categories (5), Sign-in CTA banner, Footer
+- Bilingual AR/EN toggle (client-side, inline state — no external i18n lib on landing)
+- Auth-aware: authenticated users auto-redirected to `/bookings` or `/admin`
+- Sign In dropdown: Business Dashboard → `/login`, Admin Portal → `/login` (RBAC routes after)
+- Business dashboard home moved from `/` → `/bookings`; RBAC `ROLE_HOME` updated accordingly
+- DashboardShell nav and logo button updated to point to `/bookings`
+
 ---
 
 ## 💻 TECH STACK (Current Level)
 
 ### Frontend
 - **Consumer App:** React Native (Expo), TypeScript
-- **Web Dashboards:** Next.js 14, TypeScript, Tailwind CSS
-- **Package Manager:** npm/yarn (Turbo monorepo)
+- **Landing Page + Web Dashboards:** Next.js 15, TypeScript, Tailwind CSS (`packages/dashboard`) — landing at `/`, dashboards at `/bookings`, `/analytics`, etc.
+- **Package Manager:** npm (Turbo monorepo)
 
 ### Backend
 - **API:** Node.js + Fastify
