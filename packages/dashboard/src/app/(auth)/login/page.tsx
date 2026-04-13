@@ -45,9 +45,14 @@ export default function BusinessLoginPage() {
   }, []);
 
   const getRecaptchaVerifier = useCallback(() => {
+    // Fully tear down old verifier + reset container so reCAPTCHA can reinitialise
     if (recaptchaVerifierRef.current) {
-      recaptchaVerifierRef.current.clear();
+      try { recaptchaVerifierRef.current.clear(); } catch { /* already cleared */ }
+      recaptchaVerifierRef.current = null;
     }
+    const container = document.getElementById('recaptcha-container');
+    if (container) container.innerHTML = '';
+
     recaptchaVerifierRef.current = new RecaptchaVerifier(firebaseAuth, 'recaptcha-container', {
       size: 'invisible',
     });
@@ -112,8 +117,10 @@ export default function BusinessLoginPage() {
       } else {
         router.replace(destination);
       }
-    } catch {
-      setError(t('auth_err_otp_invalid'));
+    } catch (err: unknown) {
+      console.error('[Firebase OTP] Verify failed:', err);
+      const firebaseErr = err as { code?: string; message?: string; response?: { data?: { error?: string } } };
+      setError(firebaseErr.response?.data?.error ?? firebaseErr.code ?? t('auth_err_otp_invalid'));
     } finally {
       setLoading(false);
     }
