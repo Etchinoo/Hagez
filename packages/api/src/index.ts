@@ -67,6 +67,7 @@ async function buildApp() {
   await fastify.register(cors, {
     origin: originMatchers,
     credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   // ── Rate Limiting ──────────────────────────────────────────
