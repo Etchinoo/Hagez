@@ -254,11 +254,11 @@ export default function SignupPage() {
               style={{ ...st.input, textAlign: 'center', letterSpacing: '12px', fontSize: '24px' }}
               type="text"
               inputMode="numeric"
-              maxLength={4}
+              maxLength={6}
               value={otp}
-              onChange={(e) => setOtp(e.target.value)}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
               onKeyDown={(e) => e.key === 'Enter' && handleVerifyOtp()}
-              placeholder="1111"
+              placeholder="123456"
               autoFocus
             />
             {error && <p style={{ ...st.error, textAlign: align }}>{error}</p>}
