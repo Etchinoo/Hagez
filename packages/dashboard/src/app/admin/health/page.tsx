@@ -8,6 +8,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { dashboardApi } from '@/services/api';
 
 interface HealthData {
@@ -26,9 +27,11 @@ interface MetricCard {
   alert: boolean;
   alertMsg?: string;
   sub?: string;
+  href?: string; // navigate to this admin page when clicked
 }
 
 export default function HealthPage() {
+  const router = useRouter();
   const [data, setData]       = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -49,7 +52,7 @@ export default function HealthPage() {
 
   useEffect(() => {
     fetchHealth();
-    const interval = setInterval(fetchHealth, 60_000);
+    const interval = setInterval(fetchHealth, 30_000);
     return () => clearInterval(interval);
   }, [fetchHealth]);
 
@@ -81,14 +84,16 @@ export default function HealthPage() {
           value: data.pending_verifications,
           icon: '⏳',
           alert: data.pending_verifications > 0,
-          alertMsg: `${data.pending_verifications} business(es) pending review — SLA 24h`,
+          alertMsg: `${data.pending_verifications} business(es) pending review — SLA 24h · Click to review`,
+          href: '/admin/businesses?tab=pending',
         },
         {
           label: 'Open Disputes',
           value: data.open_disputes,
           icon: '⚖️',
           alert: data.open_disputes > 0,
-          alertMsg: `${data.open_disputes} dispute(s) require resolution — SLA 72h`,
+          alertMsg: `${data.open_disputes} dispute(s) require resolution — SLA 72h · Click to review`,
+          href: '/admin/disputes',
         },
       ]
     : [];
@@ -100,7 +105,7 @@ export default function HealthPage() {
           <h1 style={styles.title}>Platform Health</h1>
           {lastUpdated && (
             <p style={styles.subtitle}>
-              Last updated: {lastUpdated.toLocaleTimeString()} · Auto-refreshes every 60s
+              Last updated: {lastUpdated.toLocaleTimeString()} · Auto-refreshes every 30s
             </p>
           )}
         </div>
@@ -116,7 +121,16 @@ export default function HealthPage() {
       ) : (
         <div style={styles.grid}>
           {cards.map((card) => (
-            <div key={card.label} style={{ ...styles.card, ...(card.alert ? styles.cardAlert : {}) }}>
+            <div
+              key={card.label}
+              style={{
+                ...styles.card,
+                ...(card.alert ? styles.cardAlert : {}),
+                ...(card.href ? styles.cardClickable : {}),
+              }}
+              onClick={() => card.href && router.push(card.href)}
+              title={card.href ? 'Click to view' : undefined}
+            >
               <div style={styles.cardTop}>
                 <span style={styles.cardIcon}>{card.icon}</span>
                 {card.alert && <span style={styles.alertBadge}>!</span>}
@@ -181,6 +195,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardLabel: { fontSize: '14px', fontWeight: 600, color: '#374151', marginTop: '6px' },
   cardSub: { fontSize: '12px', color: '#9CA3AF', marginTop: '2px' },
   alertMsg: { fontSize: '12px', color: '#B91C1C', marginTop: '8px', lineHeight: 1.4 },
+  cardClickable: { cursor: 'pointer', transition: 'box-shadow 0.15s, transform 0.1s' },
   footer: {
     display: 'flex', alignItems: 'center', gap: '8px',
     marginTop: '32px', fontSize: '13px', color: '#6B7280',

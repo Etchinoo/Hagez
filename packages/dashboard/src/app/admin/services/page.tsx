@@ -29,18 +29,18 @@ interface FormState {
 }
 
 const CATEGORIES: { value: Category | 'all'; label: string }[] = [
-  { value: 'all',         label: 'All'          },
-  { value: 'restaurant',  label: 'Restaurant'   },
-  { value: 'salon',       label: 'Salon'        },
-  { value: 'court',       label: 'Sports Court' },
-  { value: 'gaming_cafe', label: 'Gaming Cafe'  },
-  { value: 'car_wash',    label: 'Car Wash'     },
-  { value: 'medical',     label: 'Medical'      },
+  { value: 'all',         label: 'All'           },
+  { value: 'restaurant',  label: 'Restaurant'    },
+  { value: 'salon',       label: 'Beauty Salon'  },
+  { value: 'court',       label: 'Sports Court'  },
+  { value: 'gaming_cafe', label: 'Gaming Cafe'   },
+  { value: 'car_wash',    label: 'Car Wash'      },
+  { value: 'medical',     label: 'Medical Clinic'},
 ];
 
 const CATEGORY_LABEL: Record<string, string> = {
-  restaurant: 'Restaurant', salon: 'Salon', court: 'Sports Court',
-  gaming_cafe: 'Gaming Cafe', car_wash: 'Car Wash', medical: 'Medical',
+  restaurant: 'Restaurant', salon: 'Beauty Salon', court: 'Sports Court',
+  gaming_cafe: 'Gaming Cafe', car_wash: 'Car Wash', medical: 'Medical Clinic',
 };
 
 const EMPTY_FORM: FormState = {
@@ -48,6 +48,24 @@ const EMPTY_FORM: FormState = {
   name_ar: '',
   name_en: '',
   typical_duration_min: '30',
+};
+
+// Dynamic placeholder examples per category
+const PLACEHOLDER_AR: Record<string, string> = {
+  restaurant:  'مثال: وجبة رئيسية للشخصين',
+  salon:       'مثال: قص شعر سيدات',
+  court:       'مثال: حجز ملعب باديل',
+  gaming_cafe: 'مثال: جلسة PC ساعتين',
+  car_wash:    'مثال: غسيل خارجي كامل',
+  medical:     'مثال: استشارة عامة',
+};
+const PLACEHOLDER_EN: Record<string, string> = {
+  restaurant:  "e.g. Set menu for 2",
+  salon:       "e.g. Women's Haircut",
+  court:       "e.g. Padel court booking",
+  gaming_cafe: "e.g. 2-hour PC session",
+  car_wash:    "e.g. Full exterior wash",
+  medical:     "e.g. General consultation",
 };
 
 export default function ServiceCatalogPage() {
@@ -237,12 +255,12 @@ export default function ServiceCatalogPage() {
 
               <label style={s.label}>Name (Arabic) *</label>
               <input style={s.input} value={form.name_ar} dir="rtl"
-                placeholder="e.g. قص شعر سيدات"
+                placeholder={PLACEHOLDER_AR[form.category] ?? 'e.g. اسم الخدمة'}
                 onChange={(e) => setForm((f) => ({ ...f, name_ar: e.target.value }))} />
 
               <label style={s.label}>Name (English)</label>
               <input style={s.input} value={form.name_en}
-                placeholder="e.g. Women's Haircut"
+                placeholder={PLACEHOLDER_EN[form.category] ?? 'e.g. Service name'}
                 onChange={(e) => setForm((f) => ({ ...f, name_en: e.target.value }))} />
 
               <label style={s.label}>Default Duration (minutes) *</label>

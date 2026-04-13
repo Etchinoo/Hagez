@@ -20,7 +20,7 @@ const CATEGORIES: { value: string; icon: string; ar: string; en: string }[] = [
   { value: 'restaurant',  icon: '🍽️', ar: 'مطعم',            en: 'Restaurant'    },
   { value: 'salon',       icon: '✂️', ar: 'صالون تجميل',     en: 'Beauty Salon'  },
   { value: 'court',       icon: '⚽', ar: 'ملعب رياضي',      en: 'Sports Court'  },
-  { value: 'gaming_cafe', icon: '🎮', ar: 'مركز جيمنج',      en: 'Gaming Center' },
+  { value: 'gaming_cafe', icon: '🎮', ar: 'كافيه جيمنج',     en: 'Gaming Cafe'   },
   { value: 'car_wash',    icon: '🚗', ar: 'غسيل سيارات',     en: 'Car Wash'      },
   { value: 'medical',     icon: '🏥', ar: 'عيادة طبية',      en: 'Medical Clinic'},
 ];

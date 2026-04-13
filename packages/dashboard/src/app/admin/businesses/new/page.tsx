@@ -35,7 +35,7 @@ const EMPTY = {
   name_en:            '',
   category:           '',
   district:           '',
-  status:             'active',
+  status:             'pending',
   subscription_tier:  'free',
   description_ar:     '',
   description_en:     '',
@@ -60,8 +60,12 @@ export default function CreateBusinessPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.owner_phone || !form.name_ar || !form.category || !form.district) {
-      setError('Owner phone, Arabic name, category, and district are required.');
+    if (!form.owner_phone || !form.category || !form.district) {
+      setError('Owner phone, category, and district are required.');
+      return;
+    }
+    if (form.name_ar.trim().length < 3) {
+      setError('Arabic business name must be at least 3 characters.');
       return;
     }
     setSaving(true);
@@ -147,10 +151,10 @@ export default function CreateBusinessPage() {
               <input style={inp} value={form.district} onChange={set('district')}
                 placeholder="e.g. Zamalek" />
             </Field>
-            <Field label="Status">
+            <Field label="Status" hint={form.status === 'active' ? '⚠️ Setting Active bypasses the standard pending → approval workflow. The business will be immediately visible to customers.' : undefined}>
               <select style={inp} value={form.status} onChange={set('status')}>
-                <option value="active">Active</option>
-                <option value="pending">Pending (requires approval)</option>
+                <option value="pending">Pending (standard — requires approval)</option>
+                <option value="active">Active (bypasses verification workflow)</option>
                 <option value="suspended">Suspended</option>
               </select>
             </Field>
@@ -202,8 +206,8 @@ export default function CreateBusinessPage() {
           </TwoCol>
         </Section>
 
-        {/* Subscription */}
-        <Section title="Subscription">
+        {/* Subscription Tier */}
+        <Section title="Subscription Tier (Super Admin Only)">
           <Field label="Initial tier">
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
               {TIERS.map((t) => (

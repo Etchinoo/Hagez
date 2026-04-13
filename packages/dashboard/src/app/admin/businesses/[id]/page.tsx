@@ -420,7 +420,7 @@ export default function BusinessDetailPage() {
           ) : catalog.filter((i) => i.is_active).length === 0 ? (
             <Card title="Service Catalog">
               <p style={{ fontSize: 14, color: '#9CA3AF' }}>
-                No catalog services defined for <strong>{pForm.category}</strong> yet.
+                No catalog services defined for <strong>{CATEGORIES.find((c) => c.value === pForm.category)?.label ?? pForm.category}</strong> yet.
                 Go to <button style={s.inlineLink} onClick={() => router.push('/admin/services')}>Service Catalog</button> to add them.
               </p>
             </Card>
