@@ -427,8 +427,8 @@ function AvailabilityTab({ onSuccess }: { onSuccess?: () => void }) {
     { day_of_week: 2, open_time: '09:00', close_time: '22:00', slot_duration_min: 90, capacity: 4, deposit_amount: 100, enabled: true },
     { day_of_week: 3, open_time: '09:00', close_time: '22:00', slot_duration_min: 90, capacity: 4, deposit_amount: 100, enabled: true },
     { day_of_week: 4, open_time: '09:00', close_time: '22:00', slot_duration_min: 90, capacity: 4, deposit_amount: 100, enabled: true },
-    { day_of_week: 5, open_time: '12:00', close_time: '24:00', slot_duration_min: 90, capacity: 4, deposit_amount: 150, enabled: true },
-    { day_of_week: 6, open_time: '12:00', close_time: '24:00', slot_duration_min: 90, capacity: 4, deposit_amount: 150, enabled: true },
+    { day_of_week: 5, open_time: '12:00', close_time: '23:59', slot_duration_min: 90, capacity: 4, deposit_amount: 150, enabled: true },
+    { day_of_week: 6, open_time: '12:00', close_time: '23:59', slot_duration_min: 90, capacity: 4, deposit_amount: 150, enabled: true },
   ]);
 
   const updateRule = (i: number, field: string, value: any) =>
@@ -459,7 +459,7 @@ function AvailabilityTab({ onSuccess }: { onSuccess?: () => void }) {
           <div key={i} style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', opacity: rule.enabled ? 1 : 0.5 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '120px' }}>
-                <input type="checkbox" checked={rule.enabled} onChange={(e) => updateRule(i, 'enabled', e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+                <input type="checkbox" checked={rule.enabled} onChange={(e) => updateRule(i, 'enabled', e.target.checked)} style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#1B8A7A' }} />
                 <span style={{ fontWeight: 700, fontSize: '15px', color: '#0F2044' }}>{DAYS[i]}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -476,7 +476,12 @@ function AvailabilityTab({ onSuccess }: { onSuccess?: () => void }) {
                 <input type="number" min={1} max={50} value={rule.capacity} onChange={(e) => updateRule(i, 'capacity', parseInt(e.target.value))} style={{ ...inputStyle, width: '70px' }} disabled={!rule.enabled} />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={labelStyle}>{c.avail_deposit}</label>
+                <label style={{ ...labelStyle, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <span>{c.avail_deposit}</span>
+                  <span style={{ fontSize: '10px', color: '#9CA3AF', fontWeight: 400 }}>
+                    {lang === 'ar' ? 'يتجاوز الإعداد العام' : 'Overrides global policy'}
+                  </span>
+                </label>
                 <input type="number" min={0} step={50} value={rule.deposit_amount} onChange={(e) => updateRule(i, 'deposit_amount', parseInt(e.target.value))} style={{ ...inputStyle, width: '90px' }} disabled={!rule.enabled} />
               </div>
             </div>
@@ -689,16 +694,16 @@ function NotificationsTab({ onSuccess }: { onSuccess?: () => void }) {
       <div style={sectionCard}>
         <h3 style={sectionTitle}>{c.notif_hdr}</h3>
         {items.map((item, i) => (
-          <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: i === 0 ? 0 : '16px', paddingBottom: '16px', borderBottom: i < items.length - 1 ? '1px solid #F0F0F0' : 'none' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: i === 0 ? 0 : '16px', paddingBottom: '16px', borderBottom: i < items.length - 1 ? '1px solid #F0F0F0' : 'none', gap: '16px' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', color: '#0F2044' }}>{item.title}</div>
+              <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>{item.subtitle}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: item.channel === 'WhatsApp' ? '#25D366' : '#1B8A7A', backgroundColor: item.channel === 'WhatsApp' ? '#E8F9EE' : '#E8F5F3', padding: '2px 8px', borderRadius: '12px' }}>{item.channel}</span>
               <div onClick={() => setPrefs((p) => ({ ...p, [item.key]: !p[item.key] }))} style={{ width: '48px', height: '28px', borderRadius: '14px', cursor: 'pointer', backgroundColor: prefs[item.key] ? '#1B8A7A' : '#D1D5DB', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
                 <div style={{ position: 'absolute', top: '3px', left: prefs[item.key] ? '22px' : '3px', width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s' }} />
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: item.channel === 'WhatsApp' ? '#25D366' : '#1B8A7A', backgroundColor: item.channel === 'WhatsApp' ? '#E8F9EE' : '#E8F5F3', padding: '2px 8px', borderRadius: '12px' }}>{item.channel}</span>
-            </div>
-            <div style={{ textAlign: 'right' as const, flex: 1, marginRight: '16px' }}>
-              <div style={{ fontWeight: 700, fontSize: '14px', color: '#0F2044' }}>{item.title}</div>
-              <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '2px' }}>{item.subtitle}</div>
             </div>
           </div>
         ))}

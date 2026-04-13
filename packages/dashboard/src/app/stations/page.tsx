@@ -38,7 +38,7 @@ const COPY = {
     lblNameEn:   'الاسم (إنجليزي)',
     lblType:     'نوع المحطة',
     lblCapacity: 'الطاقة الاستيعابية',
-    phNameAr:    'محطة PC ١',
+    phNameAr:    'مثال: محطة PC ١',
     phNameEn:    'PC Station 1',
     saving:      'جاري الحفظ...',
     save:        'حفظ',
@@ -68,7 +68,7 @@ const COPY = {
     lblNameEn:   'Name (English)',
     lblType:     'Station type',
     lblCapacity: 'Capacity',
-    phNameAr:    'PC Station 1',
+    phNameAr:    'مثال: محطة PC ١',
     phNameEn:    'PC Station 1',
     saving:      'Saving...',
     save:        'Save',
@@ -177,7 +177,7 @@ function StationsPage() {
             <label style={{ ...s.label, textAlign: align }}>{c.lblType}</label>
             <select style={{ ...s.input, cursor: 'pointer' }} value={form.station_type}
               onChange={(e) => setForm((f) => ({ ...f, station_type: e.target.value }))}>
-              {Object.entries(STATION_TYPES_AR).map(([id, label]) => (
+              {Object.entries(stationTypes).map(([id, label]) => (
                 <option key={id} value={id}>{label}</option>
               ))}
             </select>
@@ -226,7 +226,10 @@ function StationsPage() {
             <tbody>
               {stations.map((st) => (
                 <tr key={st.id} style={!st.is_active ? s.inactiveRow : {}}>
-                  <td style={{ ...s.td, textAlign: align }}>{st.name_ar}</td>
+                  <td style={{ ...s.td, textAlign: align }}>
+                    <div style={{ fontWeight: 600 }}>{st.name_ar}</div>
+                    {st.name_en && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 2 }}>{st.name_en}</div>}
+                  </td>
                   <td style={{ ...s.td, textAlign: align }}>{stationTypes[st.specialisations?.[0]] ?? st.specialisations?.[0] ?? '—'}</td>
                   <td style={{ ...s.td, textAlign: align }}>{st.capacity}</td>
                   <td style={{ ...s.td, textAlign: align }}>

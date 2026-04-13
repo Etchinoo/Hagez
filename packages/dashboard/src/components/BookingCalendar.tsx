@@ -7,6 +7,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingsApi, slotsApi, bookingNotesApi } from '@/services/api';
 import { useLang } from '@/lib/i18n';
@@ -42,6 +43,8 @@ const COPY = {
     today:          'اليوم',
     loading:        'جاري التحميل...',
     noBookings:     'لا توجد حجوزات لهذا اليوم',
+    noBookingsCta:  'تأكد من إعداد أوقات العمل وسياسة العربون',
+    settingsLink:   'الذهاب إلى الإعدادات',
     bookingCount:   'حجز',
     guests:         'أشخاص',
     availableSlots: 'المواعيد المتاحة — منع الحجز',
@@ -69,6 +72,8 @@ const COPY = {
     today:          'Today',
     loading:        'Loading...',
     noBookings:     'No bookings for this day',
+    noBookingsCta:  'Make sure your working hours and deposit policy are configured',
+    settingsLink:   'Go to Settings',
     bookingCount:   'bookings',
     guests:         'guests',
     availableSlots: 'Available slots — Block booking',
@@ -238,6 +243,7 @@ function BookingDetailModal({
 export default function BookingCalendar() {
   const { dir, lang } = useLang();
   const c = COPY[lang];
+  const router = useRouter();
   const STATUS_CONFIG = lang === 'ar' ? STATUS_CONFIG_AR : STATUS_CONFIG_EN;
   const dateLocale = lang === 'ar' ? ar : undefined;
 
@@ -336,6 +342,10 @@ export default function BookingCalendar() {
             <div style={styles.emptyState}>
               <span style={styles.emptyEmoji}>📅</span>
               <p style={styles.emptyText}>{c.noBookings}</p>
+              <p style={styles.emptyCta}>{c.noBookingsCta}</p>
+              <button style={styles.emptySettingsBtn} onClick={() => router.push('/settings')}>
+                {c.settingsLink}
+              </button>
             </div>
           ) : (
             <div style={styles.bookingsList}>
@@ -461,9 +471,11 @@ const styles: Record<string, React.CSSProperties> = {
   weekDayNum: { fontFamily: 'Cairo, sans-serif', fontSize: '20px', fontWeight: 700, color: '#0F2044' },
   weekDayCount: { fontFamily: 'Cairo, sans-serif', fontSize: '11px', color: '#9CA3AF' },
   loading: { display: 'flex', justifyContent: 'center', padding: '48px', fontFamily: 'Cairo, sans-serif', fontSize: '16px', color: '#6B7280' },
-  emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 24px' },
+  emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 24px', textAlign: 'center' },
   emptyEmoji: { fontSize: '48px', marginBottom: '16px' },
-  emptyText: { fontFamily: 'Cairo, sans-serif', fontSize: '18px', color: '#6B7280' },
+  emptyText: { fontFamily: 'Cairo, sans-serif', fontSize: '18px', color: '#6B7280', margin: '0 0 8px' },
+  emptyCta: { fontFamily: 'Cairo, sans-serif', fontSize: '13px', color: '#9CA3AF', margin: '0 0 20px' },
+  emptySettingsBtn: { padding: '10px 24px', background: '#1B8A7A', border: 'none', borderRadius: '10px', fontFamily: 'Cairo, sans-serif', fontSize: '14px', fontWeight: 700, color: '#fff', cursor: 'pointer' },
   bookingsList: { display: 'flex', flexDirection: 'column', gap: '12px' },
   bookingCard: {
     display: 'flex', alignItems: 'flex-start', padding: '16px', borderRadius: '12px',

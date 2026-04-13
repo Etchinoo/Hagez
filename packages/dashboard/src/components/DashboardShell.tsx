@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { href: '/',          labelKey: 'nav_bookings'  as const, icon: '📅', categories: null },
   { href: '/analytics', labelKey: 'nav_analytics' as const, icon: '📊', categories: null },
   { href: '/featured',  labelKey: 'nav_featured'  as const, icon: '⭐', categories: null },
-  { href: '/staff',     labelKey: 'nav_staff'     as const, icon: '👤', categories: ['salon', 'restaurant', 'cafe'] },
+  { href: '/staff',     labelKey: 'nav_staff'     as const, icon: '👤', categories: ['salon', 'restaurant', 'cafe', 'gaming_cafe'] },
   { href: '/courts',    labelKey: 'nav_courts'    as const, icon: '⚽', categories: ['court'] },
   { href: '/stations',  labelKey: 'nav_stations'  as const, icon: '🎮', categories: ['gaming_cafe'] },
   { href: '/bays',      labelKey: 'nav_bays'      as const, icon: '🚗', categories: ['car_wash'] },
@@ -134,7 +134,7 @@ function ShellInner({ children, pageTitle }: Props) {
           <div style={styles.upsellBox}>
             <div style={styles.upsellTitle}>{t('upsell_title')}</div>
             <div style={styles.upsellDesc}>{t('upsell_desc')}</div>
-            <button style={styles.upsellBtn} onClick={() => toast.info(t('upsell_toast'))}>
+            <button style={styles.upsellBtn} onClick={() => router.push('/profile')}>
               {t('upsell_cta')}
             </button>
           </div>

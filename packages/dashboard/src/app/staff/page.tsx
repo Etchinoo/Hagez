@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { staffApi, servicesApi } from '@/services/api';
 import { markOnboardingStep } from '@/lib/onboardingUtils';
@@ -28,11 +28,19 @@ const SALON_SPECS: Record<string, { ar: string; en: string }> = {
 
 // ── Restaurant / Café roles ──────────────────────────────────
 const RESTO_ROLES: Record<string, { ar: string; en: string }> = {
-  waiter:   { ar: 'نادل',         en: 'Waiter'   },
-  host:     { ar: 'مضيف',         en: 'Host'     },
-  manager:  { ar: 'مدير',         en: 'Manager'  },
-  chef:     { ar: 'طباخ',         en: 'Chef'     },
-  cashier:  { ar: 'كاشير',        en: 'Cashier'  },
+  waiter:   { ar: 'نادل',         en: 'Waiter'        },
+  host:     { ar: 'مضيف',         en: 'Host'          },
+  manager:  { ar: 'مدير',         en: 'Manager'       },
+  chef:     { ar: 'طباخ',         en: 'Chef'          },
+  cashier:  { ar: 'كاشير',        en: 'Cashier'       },
+};
+
+// ── Gaming Cafe roles ────────────────────────────────────────
+const GAMING_ROLES: Record<string, { ar: string; en: string }> = {
+  station_tech: { ar: 'فني محطات',  en: 'Station Tech'  },
+  floor_staff:  { ar: 'موظف أرضي',  en: 'Floor Staff'   },
+  manager:      { ar: 'مدير',       en: 'Manager'       },
+  cashier:      { ar: 'كاشير',      en: 'Cashier'       },
 };
 
 const OWNER_LABEL = { ar: 'المالك', en: 'Owner' };
@@ -104,6 +112,7 @@ function StaffPage() {
   const { user } = useDashboardAuth();
   const category = user?.business_category ?? 'salon';
   const isRestoOrCafe = category === 'restaurant' || category === 'cafe';
+  const isGaming = category === 'gaming_cafe';
 
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -158,10 +167,11 @@ function StaffPage() {
     }));
   };
 
-  /** For restaurant/cafe: select a single role (replace any existing role key) */
+  /** For restaurant/cafe/gaming: select a single role (replace any existing role key) */
   const setRole = (role: string) => {
+    const allRoleKeys = new Set([...Object.keys(RESTO_ROLES), ...Object.keys(GAMING_ROLES)]);
     setForm((f) => {
-      const withoutRoles = f.specialisations.filter((s) => !Object.keys(RESTO_ROLES).includes(s));
+      const withoutRoles = f.specialisations.filter((s) => !allRoleKeys.has(s));
       return { ...f, specialisations: [role, ...withoutRoles] };
     });
   };
@@ -177,7 +187,8 @@ function StaffPage() {
     }));
   };
 
-  const selectedRole = form.specialisations.find((s) => Object.keys(RESTO_ROLES).includes(s));
+  const allRoleKeys = new Set([...Object.keys(RESTO_ROLES), ...Object.keys(GAMING_ROLES)]);
+  const selectedRole = form.specialisations.find((s) => allRoleKeys.has(s));
   const selectedServiceIds = form.specialisations.filter((s) => s.startsWith('svc:')).map((s) => s.replace('svc:', ''));
 
   const handleSave = () => {
@@ -192,9 +203,10 @@ function StaffPage() {
   // ── Display helpers ──────────────────────────────────────────
 
   const getRoleLabel = (specs: string[]) => {
-    const role = specs.find((s) => Object.keys(RESTO_ROLES).includes(s));
+    const role = specs.find((s) => allRoleKeys.has(s));
     if (!role) return null;
-    return lang === 'ar' ? RESTO_ROLES[role].ar : RESTO_ROLES[role].en;
+    const dict = GAMING_ROLES[role] ?? RESTO_ROLES[role];
+    return lang === 'ar' ? dict.ar : dict.en;
   };
 
   const getSpecLabels = (specs: string[]) =>
@@ -213,6 +225,15 @@ function StaffPage() {
   const staff: any[] = data?.staff ?? [];
   const active = staff.filter((s) => s.is_active);
   const inactive = staff.filter((s) => !s.is_active);
+
+  // Fix #8: auto-mark 'staff' onboarding step as soon as there is at least one
+  // active staff member (the owner card always counts, but we wait for the API
+  // to confirm at least one staff row so the step is truly meaningful).
+  useEffect(() => {
+    if (!isLoading && (active.length > 0 || user)) {
+      markOnboardingStep('staff');
+    }
+  }, [isLoading, active.length, user]);
 
   return (
     <div style={{ padding: '24px', fontFamily: 'Cairo, sans-serif', direction: dir, maxWidth: '900px', margin: '0 auto' }}>
@@ -256,18 +277,36 @@ function StaffPage() {
             </div>
           </div>
 
-          {/* Role (restaurant / cafe) OR Specialisations (salon) */}
+          {/* Role (restaurant/cafe/gaming) OR Specialisations (salon) */}
           {isRestoOrCafe ? (
             <>
               <label style={{ ...labelSt, textAlign: align }}>{c.lblRole}</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
                 {Object.entries(RESTO_ROLES).map(([key, labels]) => {
-                  const active = selectedRole === key;
+                  const isActive = selectedRole === key;
                   return (
                     <button
                       key={key}
                       onClick={() => setRole(key)}
-                      style={chipStyle(active, '#0F2044', '#EEF0F7')}
+                      style={chipStyle(isActive, '#0F2044', '#EEF0F7')}
+                    >
+                      {lang === 'ar' ? labels.ar : labels.en}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : isGaming ? (
+            <>
+              <label style={{ ...labelSt, textAlign: align }}>{c.lblRole}</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
+                {Object.entries(GAMING_ROLES).map(([key, labels]) => {
+                  const isActive = selectedRole === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setRole(key)}
+                      style={chipStyle(isActive, '#7C3AED', '#F3EEFF')}
                     >
                       {lang === 'ar' ? labels.ar : labels.en}
                     </button>
@@ -280,12 +319,12 @@ function StaffPage() {
               <label style={{ ...labelSt, textAlign: align }}>{c.lblSpecs}</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
                 {Object.entries(SALON_SPECS).map(([key, labels]) => {
-                  const active = form.specialisations.includes(key);
+                  const isActive = form.specialisations.includes(key);
                   return (
                     <button
                       key={key}
                       onClick={() => toggleSpec(key)}
-                      style={chipStyle(active, '#1B8A7A', '#E8F5F3')}
+                      style={chipStyle(isActive, '#1B8A7A', '#E8F5F3')}
                     >
                       {lang === 'ar' ? labels.ar : labels.en}
                     </button>
@@ -372,10 +411,15 @@ function StaffPage() {
                     </div>
                   </div>
 
-                  {/* Role badge (restaurant / cafe) */}
+                  {/* Role badge (restaurant / cafe / gaming) */}
                   {roleLabel && (
                     <div style={{ marginBottom: '8px' }}>
-                      <span style={{ padding: '3px 10px', background: '#EEF0F7', color: '#0F2044', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
+                      <span style={{
+                        padding: '3px 10px',
+                        background: isGaming ? '#F3EEFF' : '#EEF0F7',
+                        color: isGaming ? '#7C3AED' : '#0F2044',
+                        borderRadius: '12px', fontSize: '11px', fontWeight: 700,
+                      }}>
                         {roleLabel}
                       </span>
                     </div>

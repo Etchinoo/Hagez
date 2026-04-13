@@ -15,7 +15,7 @@ import { useLang } from '@/lib/i18n';
 import { getCompletedSteps, ONBOARDING_STEPS_KEY } from '@/lib/onboardingUtils';
 
 const STEPS_AR = [
-  { id: 'profile',   icon: '🏪', label: 'أكمل بيانات المحل',      desc: 'اسم المحل، الوصف، الصور',               href: '/settings' },
+  { id: 'profile',   icon: '🏪', label: 'أكمل بيانات المحل',      desc: 'اسم المحل والوصف',                        href: '/settings' },
   { id: 'hours',     icon: '🕐', label: 'حدد أوقات العمل',         desc: 'أيام وساعات عملك ومدة كل حجز',           href: '/settings' },
   { id: 'deposit',   icon: '💳', label: 'اضبط سياسة العربون',      desc: 'مبلغ العربون وشروط الإلغاء',             href: '/settings' },
   { id: 'staff',     icon: '👤', label: 'أضف موظفيك',               desc: 'الموظفون يظهرون لعملائك عند الحجز',      href: '/staff' },
@@ -23,7 +23,7 @@ const STEPS_AR = [
 ];
 
 const STEPS_EN = [
-  { id: 'profile',   icon: '🏪', label: 'Complete business info',    desc: 'Name, description, photos',              href: '/settings' },
+  { id: 'profile',   icon: '🏪', label: 'Complete business info',    desc: 'Business name & description',            href: '/settings' },
   { id: 'hours',     icon: '🕐', label: 'Set working hours',          desc: 'Days, hours & slot duration',             href: '/settings' },
   { id: 'deposit',   icon: '💳', label: 'Set deposit policy',         desc: 'Deposit amount & cancellation terms',     href: '/settings' },
   { id: 'staff',     icon: '👤', label: 'Add your staff',             desc: 'Staff appear to customers on booking',    href: '/staff' },

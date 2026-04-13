@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { featuredApi } from '@/services/api';
 import { useLang } from '@/lib/i18n';
@@ -29,7 +29,7 @@ const PLANS_AR: { id: Plan; label: string; days: number; price: number; tag?: st
 const PLANS_EN: { id: Plan; label: string; days: number; price: number; tag?: string }[] = [
   { id: 'starter_7',  label: 'Starter',      days: 7,  price: 299 },
   { id: 'growth_14',  label: 'Growth',       days: 14, price: 499, tag: 'Most popular' },
-  { id: 'pro_30',     label: 'Professional', days: 30, price: 799 },
+  { id: 'pro_30',     label: 'Pro',          days: 30, price: 799 },
 ];
 
 const STATUS_LABELS_AR: Record<string, { label: string; color: string }> = {
@@ -140,6 +140,14 @@ function FeaturedPage() {
 
   const [selectedPlan, setSelectedPlan] = useState<Plan>('growth_14');
   const [submitted, setSubmitted]       = useState(false);
+  const [benefitsVisible, setBenefitsVisible] = useState(true);
+
+  // Fade benefits in/out when selected plan changes (#28)
+  useEffect(() => {
+    setBenefitsVisible(false);
+    const t = setTimeout(() => setBenefitsVisible(true), 100);
+    return () => clearTimeout(t);
+  }, [selectedPlan]);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -234,8 +242,8 @@ function FeaturedPage() {
             ))}
           </div>
 
-          {/* Benefits — dynamic per selected plan */}
-          <div style={styles.benefitsCard}>
+          {/* Benefits — dynamic per selected plan, fades when plan changes */}
+          <div style={{ ...styles.benefitsCard, opacity: benefitsVisible ? 1 : 0, transition: 'opacity 0.15s ease' }}>
             <h3 style={styles.benefitsTitle}>{c.benefitsTitle}</h3>
             {PLAN_BENEFITS[selectedPlan].map((b, i) => (
               <div key={i} style={styles.benefitRow}>
@@ -320,7 +328,7 @@ const styles: Record<string, React.CSSProperties> = {
   sectionTitle: { fontSize: 18, fontWeight: 700, color: NAVY, margin: '0 0 16px' },
 
   plansGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 },
-  planCard: { position: 'relative' as const, background: '#fff', border: '2px solid #E5E7EB', borderRadius: 16, padding: '24px 20px', cursor: 'pointer', textAlign: 'center' as const, transition: 'all 0.15s', fontFamily: 'Cairo, sans-serif' },
+  planCard: { position: 'relative' as const, background: '#fff', border: '2px solid #F3F4F6', borderRadius: 16, padding: '24px 20px', cursor: 'pointer', textAlign: 'center' as const, transition: 'all 0.15s', fontFamily: 'Cairo, sans-serif' },
   planCardSelected: { borderColor: TEAL, background: TEAL + '08', boxShadow: `0 0 0 3px ${TEAL}33` },
   planTag: { position: 'absolute' as const, top: -12, left: '50%', transform: 'translateX(-50%)', background: GOLD, color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 20, padding: '3px 12px', whiteSpace: 'nowrap' as const },
   planName: { fontSize: 18, fontWeight: 700, color: NAVY, marginBottom: 4 },

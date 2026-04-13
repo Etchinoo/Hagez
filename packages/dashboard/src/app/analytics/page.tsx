@@ -73,7 +73,7 @@ type Period = '7' | '30' | '90';
 function AnalyticsPage() {
   const { dir, lang } = useLang();
   const c = COPY[lang];
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const month = new Date().toISOString().slice(0, 7); // current month — not user-controlled
   const [trendDays, setTrendDays] = useState<Period>('30');
 
   const { data, isLoading } = useQuery({
@@ -91,7 +91,7 @@ function AnalyticsPage() {
   const maxBookings = Math.max(...trend.map((t) => t.bookings), 1);
 
   const kpis = [
-    { label: c.kpi1Label, value: stats.bookings_total ?? '—',  sub: `${stats.bookings_confirmed ?? 0} ${c.kpi1Sub}`, color: '#0F2044' },
+    { label: c.kpi1Label, value: stats.bookings_total ?? '—',  sub: `${stats.bookings_confirmed ?? 0} ${c.kpi1Sub}`, color: '#1B8A7A' },
     { label: c.kpi2Label, value: stats.bookings_completed ?? '—', sub: `${stats.no_shows_prevented ?? 0} ${c.kpi2Sub}`, color: '#1B8A7A' },
     { label: c.kpi3Label, value: stats.deposit_revenue_egp != null ? `${Math.round(stats.deposit_revenue_egp)} ${c.kpi3Unit}` : '—', sub: c.kpi3Sub, color: '#0057FF' },
     { label: c.kpi4Label, value: stats.no_show_rate_pct != null ? `${stats.no_show_rate_pct}%` : '—', sub: `${c.kpi4Sub} ${PLATFORM_AVG_NO_SHOW}%`, color: (stats.no_show_rate_pct ?? 0) > PLATFORM_AVG_NO_SHOW ? '#D32F2F' : '#1B8A7A' },
@@ -100,14 +100,8 @@ function AnalyticsPage() {
   return (
     <div style={{ padding: '24px', fontFamily: 'Cairo, sans-serif', direction: dir, maxWidth: '1100px', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
+      <div style={{ marginBottom: '28px' }}>
         <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F2044', margin: 0 }}>{c.title}</h2>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          style={{ padding: '8px 12px', border: '1.5px solid #E5E7EB', borderRadius: '8px', fontFamily: 'Cairo, sans-serif', fontSize: '15px' }}
-        />
       </div>
 
       {/* KPI Cards */}
