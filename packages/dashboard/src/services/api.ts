@@ -70,14 +70,8 @@ export const bookingsApi = {
     dashboardApi.get('/business/bookings', { params: { date, view } }),
   updateStatus: (id: string, status: 'completed' | 'no_show') =>
     dashboardApi.patch(`/business/bookings/${id}/status`, { status }),
-  createManual: (data: {
-    slot_id: string;
-    consumer_name: string;
-    consumer_phone: string;
-    party_size?: number;
-    deposit_waived?: boolean;
-    special_requests?: string;
-  }) => dashboardApi.post('/business/bookings', data),
+  createManual: (data: Record<string, unknown>) =>
+    dashboardApi.post('/business/bookings/manual', data),
 };
 
 // ── Business Slots ───────────────────────────────────────────

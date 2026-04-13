@@ -13,6 +13,7 @@ import { bookingsApi, slotsApi, bookingNotesApi } from '@/services/api';
 import { useLang } from '@/lib/i18n';
 import { format, addDays, startOfWeek } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import ManualBookingModal from '@/components/ManualBookingModal';
 
 type View = 'day' | 'week';
 
@@ -250,6 +251,7 @@ export default function BookingCalendar() {
   const [view, setView] = useState<View>('day');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedBooking, setSelectedBooking] = useState<any | null>(null);
+  const [showManualBooking, setShowManualBooking] = useState(false);
   const queryClient = useQueryClient();
 
   const dateStr = format(selectedDate, 'yyyy-MM-dd');
@@ -306,6 +308,9 @@ export default function BookingCalendar() {
           ))}
         </div>
         <button style={styles.todayBtn} onClick={() => setSelectedDate(new Date())}>{c.today}</button>
+        <button style={styles.manualBookingBtn} onClick={() => setShowManualBooking(true)}>
+          + إضافة حجز يدوي
+        </button>
       </div>
 
       {/* Calendar Content */}
@@ -425,6 +430,14 @@ export default function BookingCalendar() {
         </div>
       )}
 
+      {/* Manual Booking Modal */}
+      {showManualBooking && (
+        <ManualBookingModal
+          selectedDate={selectedDate}
+          onClose={() => setShowManualBooking(false)}
+        />
+      )}
+
       {/* Booking Detail Modal */}
       {selectedBooking && (
         <BookingDetailModal
@@ -459,6 +472,7 @@ const styles: Record<string, React.CSSProperties> = {
   viewBtn: { padding: '8px 16px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Cairo, sans-serif', fontSize: '14px', fontWeight: 600, color: '#6B7280' },
   viewBtnActive: { background: '#0F2044', color: '#fff' },
   todayBtn: { padding: '8px 16px', background: '#1B8A7A', border: 'none', borderRadius: '8px', fontFamily: 'Cairo, sans-serif', fontSize: '14px', fontWeight: 700, color: '#fff', cursor: 'pointer' },
+  manualBookingBtn: { padding: '8px 18px', background: '#0F2044', border: 'none', borderRadius: '8px', fontFamily: 'Cairo, sans-serif', fontSize: '14px', fontWeight: 700, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' as const },
   grid: { flex: 1, overflow: 'auto', padding: '16px' },
   weekHeaders: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '16px' },
   weekDayHeader: {
