@@ -57,12 +57,7 @@ async function buildApp() {
 
   // ── Authentication ─────────────────────────────────────────
 
-  await fastify.register(jwt, {
-    secret: {
-      private: env.JWT_ACCESS_SECRET,
-      public: env.JWT_ACCESS_SECRET,
-    },
-  });
+  await fastify.register(jwt, { secret: env.JWT_ACCESS_SECRET });
 
   // ── Infrastructure Plugins ─────────────────────────────────
 
