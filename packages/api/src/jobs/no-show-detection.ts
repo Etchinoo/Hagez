@@ -53,8 +53,13 @@ async function runNoShowDetection(db: PrismaClient): Promise<void> {
 
   for (const booking of candidateBookings) {
     try {
-      // 1. Mark no-show + increment consumer no_show_count
-      await markNoShow(db, booking.id);
+      // 1. Mark no-show + increment consumer no_show_count.
+      //    markNoShow atomically claims the booking and returns true only if
+      //    THIS run won the claim. If a concurrent/overlapping runner already
+      //    claimed it, skip the rest (deposit check, split, notifications) so
+      //    the 75/25 payout runs exactly once.
+      const claimed = await markNoShow(db, booking.id);
+      if (!claimed) continue;
 
       // 2. Check if deposit_mandatory should be set
       const updatedUser = await db.user.findUniqueOrThrow({
