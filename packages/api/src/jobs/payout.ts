@@ -81,18 +81,33 @@ async function runDailyPayouts(db: PrismaClient): Promise<void> {
       continue;
     }
 
+    // H3: atomically CLAIM these rows (pending → completed) before disbursing.
+    // A concurrent runner or a re-run sees 0 still-pending rows and skips, so a
+    // business cannot be paid twice. If we didn't win all of them, another runner
+    // is handling this business — revert our claim and skip.
+    const claim = await db.payment.updateMany({
+      where: { id: { in: paymentIds }, status: 'pending' },
+      data: { status: 'completed', settled_at: new Date() },
+    });
+    if (claim.count === 0) continue;
+    if (claim.count !== paymentIds.length) {
+      await db.payment.updateMany({ where: { id: { in: paymentIds } }, data: { status: 'pending', settled_at: null } });
+      continue;
+    }
+
     try {
       await disburseToBusiness(token, businessId, totalAmount, paymentIds);
-
-      // Mark all payout records as completed
-      await db.payment.updateMany({
-        where: { id: { in: paymentIds } },
-        data: { status: 'completed', settled_at: new Date() },
-      });
-
       console.log(`[payout-job] ✅ Disbursed EGP ${totalAmount} to ${business.name_ar}`);
     } catch (err) {
       console.error(`[payout-job] ❌ Payout failed for ${business.name_ar}:`, err);
+
+      // Revert the claim so the next run retries. The deterministic per-day
+      // merchant_order_id (see disburseToBusiness) makes that retry idempotent at
+      // Paymob even if the disburse actually went through before the error.
+      await db.payment.updateMany({
+        where: { id: { in: paymentIds } },
+        data: { status: 'pending', settled_at: null },
+      });
 
       // US-036: Failed payout → WhatsApp alert to business owner
       await sendPayoutFailedAlert(db, businessId, totalAmount).catch((notifErr) =>
@@ -132,7 +147,9 @@ async function disburseToBusiness(
       amount_cents: Math.round(amountEgp * 100),
       currency: 'EGP',
       description: `Reservr payout — ${paymentIds.length} booking(s)`,
-      merchant_order_id: `PAYOUT-${businessId.slice(0, 8)}-${Date.now()}`,
+      // Deterministic per (business, day) so a retry dedupes at Paymob (H3)
+      // instead of disbursing again.
+      merchant_order_id: `PAYOUT-${businessId.slice(0, 8)}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
     }
   );
 }
