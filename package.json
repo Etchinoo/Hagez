@@ -26,8 +26,14 @@
     "@typescript-eslint/parser": "^8.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.2.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "turbo": "^2.0.0",
     "xlsx": "^0.18.5"
+  },
+  "overrides": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "packageManager": "npm@10.9.2",
   "engines": {

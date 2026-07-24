@@ -5,14 +5,19 @@
 // Cairo (Arabic) + Inter (Latin) typefaces.
 // ============================================================
 
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#0F2044',
+};
 
 export const metadata: Metadata = {
   title: 'لوحة التحكم | سوبر ريزرفيشن',
   description: 'إدارة حجوزاتك وتوافرك وإيراداتك',
   manifest: '/manifest.json',
-  themeColor: '#0F2044',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
