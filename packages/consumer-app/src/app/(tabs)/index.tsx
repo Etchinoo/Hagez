@@ -23,15 +23,14 @@ import { useAuthStore } from '../../store/auth';
 
 const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
-const ORANGE = '#D4622A';
-const MAGENTA = '#C2185B';
+const GAMING_PURPLE = '#6B21A8';
 
 const CATEGORIES = [
-  { id: 'restaurant', label: 'مطاعم', emoji: '🍽️' },
-  { id: 'salon', label: 'صالونات', emoji: '✂️' },
+  { id: 'gaming_cafe', label: 'جيمنج', emoji: '🎮' },
   // Phase 2:
+  // { id: 'restaurant', label: 'مطاعم', emoji: '🍽️' },
+  // { id: 'salon', label: 'صالونات', emoji: '✂️' },
   // { id: 'court', label: 'ملاعب', emoji: '⚽' },
-  // { id: 'gaming_cafe', label: 'جيمنج', emoji: '🎮' },
   // { id: 'car_wash', label: 'غسيل سيارات', emoji: '🚗' },
 ];
 
@@ -79,19 +78,16 @@ function RecentCardSkeleton() {
 // ── Business card ─────────────────────────────────────────────
 
 function BusinessCard({ business, onPress }: { business: any; onPress: () => void }) {
-  const accent = business.category === 'restaurant' ? ORANGE : MAGENTA;
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
-      <View style={[styles.cardImagePlaceholder, { backgroundColor: accent + '18' }]}>
-        <Text style={styles.cardImageEmoji}>
-          {business.category === 'restaurant' ? '🍽️' : '✂️'}
-        </Text>
+      <View style={[styles.cardImagePlaceholder, { backgroundColor: GAMING_PURPLE + '18' }]}>
+        <Text style={styles.cardImageEmoji}>🎮</Text>
       </View>
       <View style={styles.cardContent}>
         <View style={styles.cardNameRow}>
           <Text style={styles.cardName} numberOfLines={1}>{business.name_ar}</Text>
           {business.is_new ? (
-            <View style={[styles.newBadge, { backgroundColor: accent }]}>
+            <View style={[styles.newBadge, { backgroundColor: GAMING_PURPLE }]}>
               <Text style={styles.newBadgeText}>جديد</Text>
             </View>
           ) : (
@@ -123,11 +119,10 @@ function BusinessCard({ business, onPress }: { business: any; onPress: () => voi
 // ── Recently visited card (US-015) ────────────────────────────
 
 function RecentCard({ business, onPress }: { business: any; onPress: () => void }) {
-  const accent = business.category === 'restaurant' ? ORANGE : MAGENTA;
   return (
     <TouchableOpacity style={styles.recentCard} onPress={onPress} activeOpacity={0.8}>
-      <View style={[styles.recentImage, { backgroundColor: accent + '18' }]}>
-        <Text style={{ fontSize: 28 }}>{business.category === 'restaurant' ? '🍽️' : '✂️'}</Text>
+      <View style={[styles.recentImage, { backgroundColor: GAMING_PURPLE + '18' }]}>
+        <Text style={{ fontSize: 28 }}>🎮</Text>
       </View>
       <Text style={styles.recentName} numberOfLines={2}>{business.name_ar}</Text>
     </TouchableOpacity>
@@ -139,7 +134,7 @@ function RecentCard({ business, onPress }: { business: any; onPress: () => void 
 export default function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
-  const [selectedCategory, setSelectedCategory] = useState<string | undefined>();
+  const [selectedCategory, setSelectedCategory] = useState<string | undefined>('gaming_cafe');
   const [selectedDistrict, setSelectedDistrict] = useState<string | undefined>();
 
   const today = new Date().toISOString().split('T')[0];
@@ -195,7 +190,7 @@ export default function HomeScreen() {
         activeOpacity={0.8}
       >
         <Ionicons name="search-outline" size={18} color="#999" style={{ marginLeft: 8 }} />
-        <Text style={styles.searchPlaceholder}>ابحث عن مطعم، صالون...</Text>
+        <Text style={styles.searchPlaceholder}>ابحث عن كافيه جيمنج...</Text>
       </TouchableOpacity>
 
       {/* Category Pills */}

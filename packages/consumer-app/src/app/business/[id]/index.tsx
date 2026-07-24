@@ -1,7 +1,7 @@
 // ============================================================
 // SUPER RESERVATION PLATFORM — Business Profile Screen (US-011)
 // Photos, name AR/EN, description, rating/'New' badge,
-// services list, next 3 slots, sticky Book Now CTA.
+// gaming stations list, next 3 slots, sticky Book Now CTA.
 // ============================================================
 
 import React, { useState } from 'react';
@@ -13,8 +13,6 @@ import {
   StyleSheet,
   Image,
   Linking,
-  FlatList,
-  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -24,14 +22,14 @@ import { searchApi } from '../../../services/api';
 const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
 const GRAY = '#9CA3AF';
-const ORANGE = '#D4622A';  // restaurant accent
-const MAGENTA = '#C2185B'; // salon accent
+const GAMING_PURPLE = '#6B21A8';
 
-function categoryColor(category: string) {
-  if (category === 'restaurant') return ORANGE;
-  if (category === 'salon') return MAGENTA;
-  return TEAL;
-}
+const STATION_TYPE_EMOJI: Record<string, string> = {
+  PC: '🖥️',
+  Console: '🎮',
+  VR: '🥽',
+  'Group Room': '🏠',
+};
 
 // ── Skeleton ──────────────────────────────────────────────────
 
@@ -82,6 +80,25 @@ function SlotChip({
   );
 }
 
+// ── Station card ──────────────────────────────────────────────
+
+function StationCard({ station }: { station: any }) {
+  const stationType: string = station.specialisations?.[0] ?? 'PC';
+  const emoji = STATION_TYPE_EMOJI[stationType] ?? '🎮';
+  return (
+    <View style={styles.stationCard}>
+      <View style={styles.stationIconBox}>
+        <Text style={styles.stationEmoji}>{emoji}</Text>
+      </View>
+      <Text style={styles.stationName} numberOfLines={1}>{station.name_ar}</Text>
+      <Text style={styles.stationType}>{stationType}</Text>
+      {station.capacity > 1 && (
+        <Text style={styles.stationCapacity}>{station.capacity} لاعب</Text>
+      )}
+    </View>
+  );
+}
+
 // ── Main screen ───────────────────────────────────────────────
 
 export default function BusinessProfileScreen() {
@@ -108,8 +125,6 @@ export default function BusinessProfileScreen() {
       </View>
     );
   }
-
-  const accent = categoryColor(data.category);
 
   function openMaps() {
     const url = `https://www.google.com/maps/search/?api=1&query=${data.location.lat},${data.location.lng}`;
@@ -150,10 +165,8 @@ export default function BusinessProfileScreen() {
             )}
           </View>
         ) : (
-          <View style={[styles.photoPlaceholder, { backgroundColor: accent + '22' }]}>
-            <Text style={{ fontSize: 64 }}>
-              {data.category === 'restaurant' ? '🍽️' : '✂️'}
-            </Text>
+          <View style={[styles.photoPlaceholder, { backgroundColor: GAMING_PURPLE + '22' }]}>
+            <Text style={{ fontSize: 64 }}>🎮</Text>
           </View>
         )}
 
@@ -170,7 +183,7 @@ export default function BusinessProfileScreen() {
               {data.name_en && <Text style={styles.nameEn}>{data.name_en}</Text>}
             </View>
             {data.is_new ? (
-              <View style={[styles.badge, { backgroundColor: accent }]}>
+              <View style={[styles.badge, { backgroundColor: GAMING_PURPLE }]}>
                 <Text style={styles.badgeText}>جديد</Text>
               </View>
             ) : (
@@ -197,21 +210,13 @@ export default function BusinessProfileScreen() {
             </View>
           )}
 
-          {/* Staff (salon only) */}
-          {data.category === 'salon' && data.staff?.length > 0 && (
+          {/* Gaming Stations */}
+          {data.stations?.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>الفريق</Text>
+              <Text style={styles.sectionTitle}>الأجهزة المتاحة</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {data.staff.map((member: any) => (
-                  <View key={member.id} style={styles.staffCard}>
-                    <View style={[styles.staffAvatar, { backgroundColor: accent + '22' }]}>
-                      <Text style={{ fontSize: 24 }}>✂️</Text>
-                    </View>
-                    <Text style={styles.staffName}>{member.name_ar}</Text>
-                    {member.specialty && (
-                      <Text style={styles.staffSpecialty}>{member.specialty}</Text>
-                    )}
-                  </View>
+                {data.stations.map((station: any) => (
+                  <StationCard key={station.id} station={station} />
                 ))}
               </ScrollView>
             </View>
@@ -262,7 +267,7 @@ export default function BusinessProfileScreen() {
           </Text>
         )}
         <TouchableOpacity
-          style={[styles.ctaBtn, { backgroundColor: accent }, data.next_available_slots.length === 0 && styles.ctaBtnDisabled]}
+          style={[styles.ctaBtn, data.next_available_slots.length === 0 && styles.ctaBtnDisabled]}
           onPress={handleBookNow}
           disabled={data.next_available_slots.length === 0}
           activeOpacity={0.85}
@@ -330,11 +335,13 @@ const styles = StyleSheet.create({
   sectionTitle: { fontFamily: 'Cairo-Bold', fontSize: 17, color: NAVY, textAlign: 'right', marginBottom: 12 },
   description: { fontFamily: 'Cairo-Regular', fontSize: 15, color: '#444', textAlign: 'right', lineHeight: 24 },
 
-  // Staff
-  staffCard: { alignItems: 'center', marginLeft: 12, width: 80 },
-  staffAvatar: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-  staffName: { fontFamily: 'Cairo-SemiBold', fontSize: 12, color: NAVY, textAlign: 'center' },
-  staffSpecialty: { fontFamily: 'Cairo-Regular', fontSize: 11, color: GRAY, textAlign: 'center' },
+  // Stations
+  stationCard: { alignItems: 'center', marginLeft: 12, width: 90 },
+  stationIconBox: { width: 64, height: 64, borderRadius: 16, backgroundColor: GAMING_PURPLE + '18', justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
+  stationEmoji: { fontSize: 28 },
+  stationName: { fontFamily: 'Cairo-SemiBold', fontSize: 12, color: NAVY, textAlign: 'center' },
+  stationType: { fontFamily: 'Cairo-Regular', fontSize: 11, color: GAMING_PURPLE, textAlign: 'center', marginTop: 2 },
+  stationCapacity: { fontFamily: 'Cairo-Regular', fontSize: 11, color: GRAY, textAlign: 'center', marginTop: 1 },
 
   // Slots
   slotsRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 10 },
@@ -353,7 +360,7 @@ const styles = StyleSheet.create({
   // CTA
   ctaContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', padding: 20, paddingBottom: 34, borderTopWidth: 1, borderTopColor: '#F0F0F0', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 8 },
   ctaSlotInfo: { fontFamily: 'Cairo-Regular', fontSize: 13, color: GRAY, textAlign: 'center', marginBottom: 10 },
-  ctaBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  ctaBtn: { borderRadius: 14, paddingVertical: 16, alignItems: 'center', backgroundColor: GAMING_PURPLE },
   ctaBtnDisabled: { backgroundColor: GRAY },
   ctaBtnText: { fontFamily: 'Cairo-Bold', fontSize: 18, color: '#fff' },
 });

@@ -61,10 +61,8 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
       date?: string;
       party_size?: string;
       min_rating?: string;
-      cuisine_type?: string;
-      service_type?: string;
-      indoor_outdoor?: string;
-      price_range?: string;
+      station_type?: string;
+      has_group_rooms?: string;
       lat?: string;
       lng?: string;
       page?: string;
@@ -80,10 +78,8 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         date,
         party_size,
         min_rating,
-        cuisine_type,
-        service_type,
-        indoor_outdoor,
-        price_range,
+        station_type,
+        has_group_rooms,
         lat,
         lng,
         page = '1',
@@ -101,10 +97,13 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
       if (category) whereClause.category = category;
       if (district) whereClause.district = { contains: district, mode: 'insensitive' };
       if (min_rating) whereClause.rating_avg = { gte: parseFloat(min_rating) };
-      if (cuisine_type) whereClause.cuisine_type = cuisine_type;
-      if (service_type) whereClause.service_type = service_type;
-      if (indoor_outdoor) whereClause.indoor_outdoor = indoor_outdoor;
-      if (price_range) whereClause.price_range = price_range;
+      // Gaming-specific filters
+      if (station_type) {
+        whereClause.resources = { some: { type: 'station', specialisations: { has: station_type }, is_active: true } };
+      }
+      if (has_group_rooms === 'true') {
+        whereClause.gaming_config = { has_group_rooms: true };
+      }
 
       const now = new Date();
       const dateStart = date ? new Date(date) : now;
@@ -263,6 +262,7 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         include: {
           photos: { orderBy: { sort_order: 'asc' } },
           resources: { where: { is_active: true } },
+          gaming_config: true,
           slots: {
             where: { start_time: { gte: new Date() }, status: 'available' },
             orderBy: { start_time: 'asc' },
@@ -283,6 +283,10 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
 
       const isNew = business.review_count < 5;
 
+      const stations = business.category === 'gaming_cafe'
+        ? business.resources.filter((r) => r.type === 'station')
+        : [];
+
       return reply.send({
         id: business.id,
         name_ar: business.name_ar,
@@ -296,7 +300,8 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
         is_new: isNew,
         location: { lat: Number(business.lat), lng: Number(business.lng) },
         photos: business.photos.map((p) => p.url),
-        staff: business.category === 'salon' ? business.resources : [],
+        stations,
+        gaming_config: business.gaming_config ?? null,
         next_available_slots: business.slots.map((s) => ({
           id: s.id,
           start_time: s.start_time.toISOString(),

@@ -236,6 +236,7 @@ model Business {
   reviews                         Review[]
   resources                       Resource[]
   photos                          BusinessPhoto[]
+  gaming_config                   GamingConfig?
 
   @@index([district, category, status])
   @@map("businesses")
@@ -347,10 +348,17 @@ model Booking {
   notifications       Notification[]
   status_logs         BookingStatusLog[]
 
+  // Gaming-specific fields
+  station_type          String?   @db.VarChar(50)   // PC | Console | VR | Group Room
+  genre_preference      String?   @db.VarChar(100)
+  session_duration_min  Int?      @db.SmallInt
+  is_group_room         Boolean   @default(false)
+
   @@index([consumer_id, status])
   @@index([business_id, status])
   // No-show detection job index
   @@index([status, slot_id])
+  @@index([business_id, station_type])
   @@map("bookings")
 }
 
@@ -446,4 +454,26 @@ model Notification {
   @@index([status, scheduled_at])
   @@index([booking_id])
   @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────────────
+// TABLE: gaming_configs (gaming cafe configuration)
+// ─────────────────────────────────────────────────────────────
+
+model GamingConfig {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  business_id               String    @unique @db.Uuid
+  station_types             String[]  // PC | Console | VR | Group Room
+  has_group_rooms           Boolean   @default(false)
+  group_room_capacity       Int       @default(4) @db.SmallInt
+  min_players_group_room    Int       @default(1) @db.SmallInt
+  genre_options             String[]  // FPS | Racing | Sports | RPG | Fighting | ...
+  slot_duration_options     Int[]     // e.g. [60, 120, 180] minutes
+  default_slot_duration_min Int       @default(60) @db.SmallInt
+  created_at                DateTime  @default(now()) @db.Timestamptz
+  updated_at                DateTime  @updatedAt @db.Timestamptz
+
+  business                  Business  @relation(fields: [business_id], references: [id])
+
+  @@map("gaming_configs")
 }

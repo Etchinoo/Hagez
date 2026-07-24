@@ -47,8 +47,12 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       resource_id?: string;
       occasion?: string;
       special_requests?: string;
-      section_preference?: string;
       override_consumer_overlap?: boolean;
+      // Gaming-specific fields
+      station_type?: string;
+      genre_preference?: string;
+      session_duration_min?: number;
+      is_group_room?: boolean;
     };
   }>(
     '/bookings',
@@ -58,7 +62,8 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
       const {
         slot_id, business_id, party_size = 1,
         resource_id, occasion, special_requests,
-        section_preference, override_consumer_overlap,
+        override_consumer_overlap,
+        station_type, genre_preference, session_duration_min, is_group_room,
       } = request.body;
 
       try {
@@ -70,8 +75,11 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           party_size,
           occasion,
           special_requests,
-          section_preference,
           override_consumer_overlap,
+          station_type,
+          genre_preference,
+          session_duration_min,
+          is_group_room,
         });
 
         const consumer = await fastify.db.user.findUniqueOrThrow({ where: { id: user.sub } });

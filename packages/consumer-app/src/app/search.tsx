@@ -1,10 +1,10 @@
 // ============================================================
 // SUPER RESERVATION PLATFORM — Search Screen (US-010 + US-012)
-// Auto-complete after 2 chars, full filter panel,
+// Auto-complete after 2 chars, gaming filter panel,
 // Arabic RTL, skeleton loading, empty state.
 // ============================================================
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import {
   FlatList,
   StyleSheet,
   Modal,
-  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -24,37 +23,23 @@ import { useDebounce } from '../hooks/useDebounce';
 
 const NAVY = '#0F2044';
 const TEAL = '#1B8A7A';
+const GAMING_PURPLE = '#6B21A8';
 const GRAY = '#9CA3AF';
-const ORANGE = '#D4622A';
-const MAGENTA = '#C2185B';
 
 // ── Filter state ──────────────────────────────────────────────
 
 interface Filters {
-  category?: string;
   district?: string;
   min_rating?: string;
-  cuisine_type?: string;
-  service_type?: string;
-  indoor_outdoor?: string;
-  price_range?: string;
+  station_type?: string;
+  has_group_rooms?: string;
 }
 
-const CUISINE_OPTIONS = [
-  { value: 'egyptian', label: 'مصري' },
-  { value: 'italian', label: 'إيطالي' },
-  { value: 'asian', label: 'آسيوي' },
-  { value: 'seafood', label: 'مأكولات بحرية' },
-  { value: 'grills', label: 'مشويات' },
-  { value: 'cafe', label: 'كافيه' },
-];
-
-const SERVICE_OPTIONS = [
-  { value: 'haircut', label: 'قص شعر' },
-  { value: 'coloring', label: 'صبغة' },
-  { value: 'nails', label: 'مناكير' },
-  { value: 'facial', label: 'جلسة وجه' },
-  { value: 'blowout', label: 'سشوار' },
+const STATION_TYPE_OPTIONS = [
+  { value: 'PC', label: '🖥️ PC' },
+  { value: 'Console', label: '🎮 Console' },
+  { value: 'VR', label: '🥽 VR' },
+  { value: 'Group Room', label: '🏠 Group Room' },
 ];
 
 const DISTRICT_OPTIONS = [
@@ -73,12 +58,6 @@ const RATING_OPTIONS = [
   { value: '3', label: '⭐⭐⭐ فأكثر' },
 ];
 
-const INDOOR_OUTDOOR_OPTIONS = [
-  { value: 'indoor', label: 'داخلي' },
-  { value: 'outdoor', label: 'خارجي' },
-  { value: 'both', label: 'الاثنان' },
-];
-
 // ── Skeleton card ─────────────────────────────────────────────
 
 function SkeletonCard() {
@@ -94,7 +73,7 @@ function SkeletonCard() {
   );
 }
 
-// ── Chip selector ─────────────────────────────────────────────
+// ── Chip group ────────────────────────────────────────────────
 
 function ChipGroup({
   options,
@@ -159,41 +138,33 @@ function FilterPanel({
         </View>
 
         <ScrollView style={styles.filterBody} showsVerticalScrollIndicator={false}>
-          {/* Category */}
-          <Text style={styles.filterSectionLabel}>النوع</Text>
+          {/* Station type */}
+          <Text style={styles.filterSectionLabel}>نوع الجهاز</Text>
           <ChipGroup
-            options={[{ value: 'restaurant', label: '🍽️ مطاعم' }, { value: 'salon', label: '✂️ صالونات' }]}
-            value={draft.category}
-            onSelect={(v) => { set('category', v); set('cuisine_type', undefined); set('service_type', undefined); }}
+            options={STATION_TYPE_OPTIONS}
+            value={draft.station_type}
+            onSelect={(v) => set('station_type', v)}
           />
 
-          {/* Cuisine (restaurants only) */}
-          {draft.category === 'restaurant' && (
-            <>
-              <Text style={styles.filterSectionLabel}>نوع المطبخ</Text>
-              <ChipGroup options={CUISINE_OPTIONS} value={draft.cuisine_type} onSelect={(v) => set('cuisine_type', v)} />
-            </>
-          )}
-
-          {/* Service (salons only) */}
-          {draft.category === 'salon' && (
-            <>
-              <Text style={styles.filterSectionLabel}>نوع الخدمة</Text>
-              <ChipGroup options={SERVICE_OPTIONS} value={draft.service_type} onSelect={(v) => set('service_type', v)} />
-            </>
-          )}
+          {/* Group rooms toggle */}
+          <Text style={[styles.filterSectionLabel, { marginTop: 20 }]}>خيارات الغرف</Text>
+          <TouchableOpacity
+            style={[styles.toggleRow, draft.has_group_rooms === 'true' && styles.toggleRowActive]}
+            onPress={() => set('has_group_rooms', draft.has_group_rooms === 'true' ? undefined : 'true')}
+          >
+            <Text style={[styles.toggleLabel, draft.has_group_rooms === 'true' && styles.toggleLabelActive]}>
+              🏠 فيها Group Rooms
+            </Text>
+            <View style={[styles.toggle, draft.has_group_rooms === 'true' && styles.toggleOn]} />
+          </TouchableOpacity>
 
           {/* District */}
-          <Text style={styles.filterSectionLabel}>المنطقة</Text>
+          <Text style={[styles.filterSectionLabel, { marginTop: 20 }]}>المنطقة</Text>
           <ChipGroup options={DISTRICT_OPTIONS} value={draft.district} onSelect={(v) => set('district', v)} />
 
           {/* Rating */}
-          <Text style={styles.filterSectionLabel}>التقييم</Text>
+          <Text style={[styles.filterSectionLabel, { marginTop: 20 }]}>التقييم</Text>
           <ChipGroup options={RATING_OPTIONS} value={draft.min_rating} onSelect={(v) => set('min_rating', v)} />
-
-          {/* Indoor / Outdoor */}
-          <Text style={styles.filterSectionLabel}>الجلسة</Text>
-          <ChipGroup options={INDOOR_OUTDOOR_OPTIONS} value={draft.indoor_outdoor} onSelect={(v) => set('indoor_outdoor', v)} />
 
           <View style={{ height: 32 }} />
         </ScrollView>
@@ -213,17 +184,16 @@ function FilterPanel({
 // ── Result card ───────────────────────────────────────────────
 
 function ResultCard({ business, onPress }: { business: any; onPress: () => void }) {
-  const accent = business.category === 'restaurant' ? ORANGE : MAGENTA;
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.8}>
-      <View style={[styles.cardImagePlaceholder, { backgroundColor: accent + '18' }]}>
-        <Text style={{ fontSize: 40 }}>{business.category === 'restaurant' ? '🍽️' : '✂️'}</Text>
+      <View style={[styles.cardImagePlaceholder, { backgroundColor: GAMING_PURPLE + '18' }]}>
+        <Text style={{ fontSize: 40 }}>🎮</Text>
       </View>
       <View style={styles.cardBody}>
         <View style={styles.cardTop}>
           <Text style={styles.cardName}>{business.name_ar}</Text>
           {business.is_new ? (
-            <View style={[styles.newBadge, { backgroundColor: accent }]}>
+            <View style={styles.newBadge}>
               <Text style={styles.newBadgeText}>جديد</Text>
             </View>
           ) : (
@@ -267,25 +237,22 @@ export default function SearchScreen() {
 
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
-  // Autocomplete
   const { data: autocompleteData } = useQuery({
-    queryKey: ['autocomplete', debouncedQuery, filters.category],
-    queryFn: () => searchApi.autocomplete(debouncedQuery, filters.category).then((r) => r.data),
+    queryKey: ['autocomplete', debouncedQuery],
+    queryFn: () => searchApi.autocomplete(debouncedQuery, 'gaming_cafe').then((r) => r.data),
     enabled: debouncedQuery.length >= 2 && showSuggestions,
   });
   const suggestions = autocompleteData?.suggestions ?? [];
 
-  // Search results
-  const searchParams = {
-    ...filters,
-    ...(debouncedQuery.length >= 2 ? {} : {}), // full-text handled server-side
-    limit: 30,
-  };
-
   const { data: searchData, isLoading } = useQuery({
     queryKey: ['search', debouncedQuery, filters],
     queryFn: () =>
-      searchApi.searchBusinesses({ ...searchParams, q: debouncedQuery || undefined }).then((r) => r.data),
+      searchApi.searchBusinesses({
+        category: 'gaming_cafe',
+        ...filters,
+        q: debouncedQuery || undefined,
+        limit: 30,
+      }).then((r) => r.data),
     enabled: debouncedQuery.length >= 2 || activeFilterCount > 0,
   });
 
@@ -307,7 +274,7 @@ export default function SearchScreen() {
             onChangeText={(t) => { setQuery(t); setShowSuggestions(true); }}
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-            placeholder="ابحث عن مطعم، صالون..."
+            placeholder="ابحث عن كافيه جيمنج..."
             placeholderTextColor={GRAY}
             textAlign="right"
             writingDirection="rtl"
@@ -409,8 +376,8 @@ const styles = StyleSheet.create({
   inputIcon: { marginLeft: 4 },
   input: { flex: 1, fontFamily: 'Cairo-Regular', fontSize: 16, color: NAVY, paddingVertical: 11 },
   filterBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F0F0F0', justifyContent: 'center', alignItems: 'center' },
-  filterBtnActive: { backgroundColor: TEAL },
-  filterBadge: { position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: 8, backgroundColor: ORANGE, justifyContent: 'center', alignItems: 'center' },
+  filterBtnActive: { backgroundColor: GAMING_PURPLE },
+  filterBadge: { position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: 8, backgroundColor: GAMING_PURPLE, justifyContent: 'center', alignItems: 'center' },
   filterBadgeText: { fontFamily: 'Cairo-Bold', fontSize: 10, color: '#fff' },
 
   // Autocomplete
@@ -429,7 +396,7 @@ const styles = StyleSheet.create({
   cardBody: { padding: 14 },
   cardTop: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   cardName: { fontFamily: 'Cairo-Bold', fontSize: 16, color: NAVY, textAlign: 'right', flex: 1, marginLeft: 8 },
-  newBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  newBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: GAMING_PURPLE },
   newBadgeText: { fontFamily: 'Cairo-Bold', fontSize: 11, color: '#fff' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   ratingText: { fontFamily: 'Cairo-SemiBold', fontSize: 13, color: NAVY },
@@ -455,14 +422,24 @@ const styles = StyleSheet.create({
   filterHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 24, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   filterTitle: { fontFamily: 'Cairo-Bold', fontSize: 18, color: NAVY },
   filterClose: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: GRAY },
-  filterReset: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: ORANGE },
+  filterReset: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: GAMING_PURPLE },
   filterBody: { flex: 1, padding: 20 },
   filterSectionLabel: { fontFamily: 'Cairo-Bold', fontSize: 15, color: NAVY, textAlign: 'right', marginBottom: 10, marginTop: 4 },
   filterChip: { borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, marginLeft: 8, backgroundColor: '#fff' },
-  filterChipActive: { borderColor: TEAL, backgroundColor: TEAL },
+  filterChipActive: { borderColor: GAMING_PURPLE, backgroundColor: GAMING_PURPLE },
   filterChipText: { fontFamily: 'Cairo-Medium', fontSize: 13, color: NAVY },
   filterChipTextActive: { color: '#fff' },
+
+  // Group rooms toggle
+  toggleRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14 },
+  toggleRowActive: { borderColor: GAMING_PURPLE, backgroundColor: GAMING_PURPLE + '10' },
+  toggleLabel: { fontFamily: 'Cairo-SemiBold', fontSize: 15, color: NAVY },
+  toggleLabelActive: { color: GAMING_PURPLE },
+  toggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: '#E5E7EB' },
+  toggleOn: { backgroundColor: GAMING_PURPLE },
+
+  // Filter footer
   filterFooter: { padding: 20, paddingBottom: 36, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#F0F0F0' },
-  applyBtn: { backgroundColor: TEAL, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  applyBtn: { backgroundColor: GAMING_PURPLE, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   applyBtnText: { fontFamily: 'Cairo-Bold', fontSize: 17, color: '#fff' },
 });

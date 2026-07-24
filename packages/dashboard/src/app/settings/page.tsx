@@ -12,7 +12,9 @@ import { slotsApi, businessApi } from '@/services/api';
 
 const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
-type Tab = 'availability' | 'policy' | 'payout';
+type Tab = 'availability' | 'policy' | 'payout' | 'gaming';
+
+const GAMING_PURPLE = '#6B21A8';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('availability');
@@ -22,31 +24,37 @@ export default function SettingsPage() {
       <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#0F2044', marginBottom: '8px' }}>الإعدادات</h2>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '28px', borderBottom: '2px solid #E5E7EB', paddingBottom: '0' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '28px', borderBottom: '2px solid #E5E7EB', paddingBottom: '0', flexWrap: 'wrap' }}>
         {([
           { key: 'availability', label: 'أوقات العمل' },
           { key: 'policy',       label: 'سياسة العربون والإلغاء' },
           { key: 'payout',       label: 'إعدادات المدفوعات' },
-        ] as { key: Tab; label: string }[]).map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            style={{
-              padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer',
-              fontFamily: 'Cairo, sans-serif', fontSize: '15px', fontWeight: activeTab === tab.key ? 700 : 400,
-              color: activeTab === tab.key ? '#1B8A7A' : '#6B7280',
-              borderBottom: activeTab === tab.key ? '2px solid #1B8A7A' : '2px solid transparent',
-              marginBottom: '-2px',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+          { key: 'gaming',       label: '🎮 إعداد الجيمنج' },
+        ] as { key: Tab; label: string }[]).map((tab) => {
+          const isGaming = tab.key === 'gaming';
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '10px 18px', border: 'none', background: 'none', cursor: 'pointer',
+                fontFamily: 'Cairo, sans-serif', fontSize: '15px', fontWeight: active ? 700 : 400,
+                color: active ? (isGaming ? GAMING_PURPLE : '#1B8A7A') : '#6B7280',
+                borderBottom: active ? `2px solid ${isGaming ? GAMING_PURPLE : '#1B8A7A'}` : '2px solid transparent',
+                marginBottom: '-2px',
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {activeTab === 'availability' && <AvailabilityTab />}
       {activeTab === 'policy'       && <PolicyTab />}
       {activeTab === 'payout'       && <PayoutTab />}
+      {activeTab === 'gaming'       && <GamingSetupTab />}
     </div>
   );
 }
@@ -247,7 +255,7 @@ function PolicyTab() {
             {policyPreviewAr}
           </p>
           <p style={{ fontSize: '11px', color: '#6B7280', marginTop: '8px', marginBottom: 0 }}>
-            رسوم الحجز (تُضاف من المنصة): مطعم 25 ج.م • صالون 15 ج.م
+            رسوم الحجز (تُضاف من المنصة): جيمنج كافيه 20 ج.م
           </p>
         </div>
       </div>
@@ -354,6 +362,196 @@ function PayoutTab() {
           {saving ? 'جاري الحفظ...' : 'حفظ إعدادات الاستلام'}
         </button>
         {success && <span style={{ color: '#1B8A7A', fontSize: '15px' }}>✅ تم الحفظ بنجاح</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab 4: Gaming Setup ────────────────────────────────────────
+
+const ALL_STATION_TYPES = ['PC', 'Console', 'VR', 'Group Room'];
+const ALL_GENRES = ['FPS', 'Racing', 'Sports', 'RPG', 'Fighting', 'Strategy', 'Simulation', 'Horror'];
+const DURATION_OPTIONS = [30, 60, 90, 120, 150, 180, 240];
+
+function GamingSetupTab() {
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [config, setConfig] = useState({
+    station_types: ['PC', 'Console'] as string[],
+    has_group_rooms: false,
+    group_room_capacity: 6,
+    min_players_group_room: 2,
+    genre_options: ['FPS', 'Racing', 'Sports', 'RPG'] as string[],
+    slot_duration_options: [60, 120, 180] as number[],
+    default_slot_duration_min: 60,
+  });
+
+  useEffect(() => {
+    businessApi.getGamingConfig().then((r) => {
+      if (r.data) setConfig(r.data);
+    }).catch(() => {});
+  }, []);
+
+  function toggleStation(type: string) {
+    setConfig((prev) => {
+      const has = prev.station_types.includes(type);
+      const updated = has ? prev.station_types.filter((t) => t !== type) : [...prev.station_types, type];
+      const hasGroupRoom = updated.includes('Group Room');
+      return {
+        ...prev,
+        station_types: updated,
+        has_group_rooms: hasGroupRoom,
+      };
+    });
+  }
+
+  function toggleGenre(genre: string) {
+    setConfig((prev) => {
+      const has = prev.genre_options.includes(genre);
+      return { ...prev, genre_options: has ? prev.genre_options.filter((g) => g !== genre) : [...prev.genre_options, genre] };
+    });
+  }
+
+  function toggleDuration(mins: number) {
+    setConfig((prev) => {
+      const has = prev.slot_duration_options.includes(mins);
+      const updated = has ? prev.slot_duration_options.filter((d) => d !== mins) : [...prev.slot_duration_options, mins].sort((a, b) => a - b);
+      return {
+        ...prev,
+        slot_duration_options: updated,
+        default_slot_duration_min: updated.includes(prev.default_slot_duration_min) ? prev.default_slot_duration_min : updated[0] ?? 60,
+      };
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await businessApi.updateGamingConfig(config);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch {
+      alert('فشل الحفظ. حاول مرة أخرى.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const chipBase: React.CSSProperties = {
+    padding: '8px 14px', border: '1.5px solid #E5E7EB', borderRadius: '20px',
+    fontFamily: 'Cairo, sans-serif', fontSize: '14px', cursor: 'pointer', background: '#fff', color: '#0F2044',
+  };
+  const chipActive: React.CSSProperties = {
+    borderColor: GAMING_PURPLE, background: GAMING_PURPLE + '15', color: GAMING_PURPLE, fontWeight: 700,
+  };
+
+  return (
+    <div>
+      <p style={{ color: '#6B7280', fontSize: '14px', marginBottom: '24px' }}>
+        إعدادات كافيه الجيمنج — أنواع الأجهزة، خيارات الألعاب، ومدد الجلسات.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+        {/* Station types */}
+        <div style={sectionCard}>
+          <h3 style={sectionTitle}>أنواع الأجهزة المتاحة</h3>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {ALL_STATION_TYPES.map((type) => (
+              <button
+                key={type}
+                style={{ ...chipBase, ...(config.station_types.includes(type) ? chipActive : {}) }}
+                onClick={() => toggleStation(type)}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Group room settings */}
+        {config.has_group_rooms && (
+          <div style={sectionCard}>
+            <h3 style={sectionTitle}>إعدادات Group Room</h3>
+            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ ...labelStyle, fontSize: '14px' }}>طاقة الغرفة</label>
+                <input
+                  type="number" min={2} max={20} value={config.group_room_capacity}
+                  onChange={(e) => setConfig((p) => ({ ...p, group_room_capacity: Number(e.target.value) }))}
+                  style={{ ...inputStyle, width: '70px' }}
+                />
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>لاعب</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label style={{ ...labelStyle, fontSize: '14px' }}>الحد الأدنى</label>
+                <input
+                  type="number" min={1} max={config.group_room_capacity} value={config.min_players_group_room}
+                  onChange={(e) => setConfig((p) => ({ ...p, min_players_group_room: Number(e.target.value) }))}
+                  style={{ ...inputStyle, width: '70px' }}
+                />
+                <span style={{ color: '#6B7280', fontSize: '13px' }}>لاعب</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Genre options */}
+        <div style={sectionCard}>
+          <h3 style={sectionTitle}>خيارات الألعاب</h3>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {ALL_GENRES.map((genre) => (
+              <button
+                key={genre}
+                style={{ ...chipBase, ...(config.genre_options.includes(genre) ? chipActive : {}) }}
+                onClick={() => toggleGenre(genre)}
+              >
+                {genre}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Duration options */}
+        <div style={sectionCard}>
+          <h3 style={sectionTitle}>مدد الجلسات</h3>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+            {DURATION_OPTIONS.map((mins) => (
+              <button
+                key={mins}
+                style={{ ...chipBase, ...(config.slot_duration_options.includes(mins) ? chipActive : {}) }}
+                onClick={() => toggleDuration(mins)}
+              >
+                {mins} دقيقة
+              </button>
+            ))}
+          </div>
+          {config.slot_duration_options.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ ...labelStyle, fontSize: '14px' }}>المدة الافتراضية</label>
+              <select
+                value={config.default_slot_duration_min}
+                onChange={(e) => setConfig((p) => ({ ...p, default_slot_duration_min: Number(e.target.value) }))}
+                style={{ ...inputStyle, paddingRight: '12px' }}
+              >
+                {config.slot_duration_options.map((d) => (
+                  <option key={d} value={d}>{d} دقيقة</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ marginTop: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{ ...saveButtonStyle(saving), background: GAMING_PURPLE }}
+        >
+          {saving ? 'جاري الحفظ...' : 'حفظ إعدادات الجيمنج'}
+        </button>
+        {success && <span style={{ color: GAMING_PURPLE, fontSize: '15px' }}>✅ تم الحفظ بنجاح</span>}
       </div>
     </div>
   );

@@ -154,14 +154,18 @@ export async function createBookingWithHold(
     party_size: number;
     occasion?: string;
     special_requests?: string;
-    section_preference?: string;
     override_consumer_overlap?: boolean;
+    station_type?: string;
+    genre_preference?: string;
+    session_duration_min?: number;
+    is_group_room?: boolean;
   }
 ): Promise<BookingCreationResult> {
   const {
     consumer_id, business_id, slot_id, resource_id,
-    party_size, occasion, special_requests, section_preference,
+    party_size, occasion, special_requests,
     override_consumer_overlap = false,
+    station_type, genre_preference, session_duration_min, is_group_room,
   } = params;
 
   // 1. Check slot availability
@@ -214,7 +218,10 @@ export async function createBookingWithHold(
       party_size,
       occasion: (occasion as any) ?? null,
       special_requests: special_requests ?? null,
-      section_preference: section_preference ?? null,
+      station_type: station_type ?? null,
+      genre_preference: genre_preference ?? null,
+      session_duration_min: session_duration_min ?? null,
+      is_group_room: is_group_room ?? false,
       status: 'pending_payment',
       deposit_amount: slot.deposit_amount,
       platform_fee: platformFee,

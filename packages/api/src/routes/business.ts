@@ -428,6 +428,143 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
   );
+  // ── GET /business/gaming-config ───────────────────────────
+
+  fastify.get(
+    '/business/gaming-config',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const config = await fastify.db.gamingConfig.findUnique({ where: { business_id: business.id } });
+      return reply.send({ gaming_config: config });
+    }
+  );
+
+  // ── PATCH /business/gaming-config ─────────────────────────
+
+  fastify.patch<{
+    Body: {
+      station_types?: string[];
+      has_group_rooms?: boolean;
+      group_room_capacity?: number;
+      min_players_group_room?: number;
+      genre_options?: string[];
+      slot_duration_options?: number[];
+      default_slot_duration_min?: number;
+    };
+  }>(
+    '/business/gaming-config',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const config = await fastify.db.gamingConfig.upsert({
+        where: { business_id: business.id },
+        create: { business_id: business.id, ...request.body },
+        update: { ...request.body },
+      });
+
+      return reply.send({ gaming_config: config });
+    }
+  );
+
+  // ── GET /business/stations ─────────────────────────────────
+
+  fastify.get(
+    '/business/stations',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const stations = await fastify.db.resource.findMany({
+        where: { business_id: business.id, type: 'station' },
+        orderBy: { created_at: 'asc' },
+      });
+
+      return reply.send({ stations });
+    }
+  );
+
+  // ── POST /business/stations ────────────────────────────────
+
+  fastify.post<{
+    Body: {
+      name_ar: string;
+      name_en?: string;
+      station_type: string;  // stored in specialisations[0]: PC | Console | VR | Group Room
+      capacity?: number;
+    };
+  }>(
+    '/business/stations',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const { name_ar, name_en, station_type, capacity = 1 } = request.body;
+
+      const station = await fastify.db.resource.create({
+        data: {
+          business_id: business.id,
+          type: 'station',
+          name_ar,
+          name_en: name_en ?? null,
+          capacity,
+          specialisations: [station_type],
+          is_active: true,
+        },
+      });
+
+      return reply.code(201).send({ station });
+    }
+  );
+
+  // ── PATCH /business/stations/:id ──────────────────────────
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: {
+      name_ar?: string;
+      name_en?: string;
+      station_type?: string;
+      capacity?: number;
+      is_active?: boolean;
+    };
+  }>(
+    '/business/stations/:id',
+    { preHandler: fastify.requireRole(['business_owner']) },
+    async (request, reply) => {
+      const user = request.user as JwtAccessPayload;
+      const business = await getAuthenticatedBusiness(user.sub);
+      if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
+
+      const station = await fastify.db.resource.findFirst({ where: { id: request.params.id, business_id: business.id, type: 'station' } });
+      if (!station) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Station not found.', message_ar: 'المحطة غير موجودة.' } });
+
+      const { name_ar, name_en, station_type, capacity, is_active } = request.body;
+
+      const updated = await fastify.db.resource.update({
+        where: { id: station.id },
+        data: {
+          ...(name_ar !== undefined && { name_ar }),
+          ...(name_en !== undefined && { name_en }),
+          ...(station_type !== undefined && { specialisations: [station_type] }),
+          ...(capacity !== undefined && { capacity }),
+          ...(is_active !== undefined && { is_active }),
+        },
+      });
+
+      return reply.send({ station: updated });
+    }
+  );
 };
 
 // ── Helper: Build Arabic policy preview string ─────────────

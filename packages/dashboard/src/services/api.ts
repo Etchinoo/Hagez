@@ -98,6 +98,16 @@ export const businessApi = {
     payout_method?: 'bank_transfer' | 'paymob_wallet';
     payout_threshold_egp?: number;
   }) => dashboardApi.put('/business/policy', data),
+  getGamingConfig: () => dashboardApi.get('/business/gaming-config'),
+  updateGamingConfig: (data: {
+    station_types?: string[];
+    has_group_rooms?: boolean;
+    group_room_capacity?: number;
+    min_players_group_room?: number;
+    genre_options?: string[];
+    slot_duration_options?: number[];
+    default_slot_duration_min?: number;
+  }) => dashboardApi.patch('/business/gaming-config', data),
 };
 
 // ── Analytics ────────────────────────────────────────────────

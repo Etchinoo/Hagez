@@ -21,7 +21,7 @@ export const ar = {
 
   auth: {
     welcomeTitle: 'اتحجز في ثوانٍ',
-    welcomeSubtitle: 'مطاعم، صالونات، ملاعب وأكثر — في تطبيق واحد',
+    welcomeSubtitle: 'احجز جلستك في كافيه جيمنج — في ثوانٍ',
     enterPhone: 'أدخل رقم هاتفك',
     phonePlaceholder: '+201XXXXXXXXX',
     sendOtp: 'إرسال الكود',
@@ -42,13 +42,9 @@ export const ar = {
 
   home: {
     greeting: 'أهلاً،',
-    searchPlaceholder: 'ابحث عن مطعم، صالون...',
+    searchPlaceholder: 'ابحث عن كافيه جيمنج...',
     categories: {
-      restaurant: 'مطاعم',
-      salon: 'صالونات',
-      court: 'ملاعب',
       gaming: 'جيمنج',
-      carWash: 'غسيل سيارات',
     },
     districts: {
       new_cairo: 'القاهرة الجديدة',
@@ -70,26 +66,23 @@ export const ar = {
     viewAvailability: 'اعرض المواعيد',
     about: 'عن المكان',
     location: 'الموقع',
-    staff: 'الفريق',
-    anyStaff: 'أي متخصص',
+    stations: 'الأجهزة المتاحة',
+    stationType: 'نوع الجهاز',
   },
 
   booking: {
     selectDate: 'اختر التاريخ',
     selectTime: 'اختر الموعد',
-    partySize: 'عدد الأشخاص',
-    occasion: {
-      label: 'المناسبة (اختياري)',
-      none: 'لا توجد مناسبة',
-      birthday: 'عيد ميلاد 🎂',
-      anniversary: 'ذكرى سنوية 💑',
-      business: 'اجتماع عمل 💼',
-      other: 'مناسبة أخرى',
-    },
+    sessionType: 'نوع الجلسة',
+    solo: 'سولو',
+    duo: 'ثنائي',
+    groupRoom: 'Group Room',
+    stationPicker: 'اختر الجهاز',
+    genrePreference: 'تفضيل اللعبة',
+    duration: 'مدة الجلسة',
+    playerCount: 'عدد اللاعبين',
     specialRequests: 'طلبات خاصة (اختياري)',
-    specialRequestsPlaceholder: 'أي طلبات خاصة للمكان...',
-    selectStaff: 'اختر المتخصص',
-    selectService: 'اختر الخدمة',
+    specialRequestsPlaceholder: 'طلبات خاصة (اختياري)...',
     slotHeld: 'الموعد محجوز لك لـ',
     minutes: 'دقيقة',
     slotExpired: 'انتهى وقت الحجز. اختر موعداً آخر.',
