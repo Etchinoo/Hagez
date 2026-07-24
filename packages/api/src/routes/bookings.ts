@@ -35,6 +35,7 @@ import {
   sendDisputeReceived,
 } from '../services/notification.js';
 import type { JwtAccessPayload } from '../types/index.js';
+import { uuid, idParams, pageQuery, bookingStatusEnum } from '../schemas/common.js';
 
 const bookingRoutes: FastifyPluginAsync = async (fastify) => {
   // ── POST /bookings ─────────────────────────────────────────
@@ -56,7 +57,29 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/bookings',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['slot_id', 'business_id'],
+          additionalProperties: false,
+          properties: {
+            slot_id: uuid,
+            business_id: uuid,
+            party_size: { type: 'integer', minimum: 1, maximum: 50 },
+            resource_id: uuid,
+            occasion: { type: 'string', maxLength: 50 },
+            special_requests: { type: 'string', maxLength: 500 },
+            override_consumer_overlap: { type: 'boolean' },
+            station_type: { type: 'string', maxLength: 50 },
+            genre_preference: { type: 'string', maxLength: 100 },
+            session_duration_min: { type: 'integer', minimum: 15, maximum: 1440 },
+            is_group_room: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const {
@@ -146,7 +169,20 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { payment_method: string };
   }>(
     '/bookings/:id/pay',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['payment_method'],
+          additionalProperties: false,
+          properties: {
+            payment_method: { type: 'string', enum: ['card', 'fawry', 'vodafone_cash', 'instapay', 'meeza'] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { payment_method } = request.body;
@@ -182,13 +218,25 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── GET /bookings ──────────────────────────────────────────
 
-  fastify.get<{ Querystring: { status?: string; page?: string } }>(
+  fastify.get<{ Querystring: { status?: string; page?: number } }>(
     '/bookings',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            status: { type: 'string', enum: [...bookingStatusEnum] },
+            page: pageQuery,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
-      const { status, page = '1' } = request.query;
-      const pageNum = parseInt(page);
+      const { status, page = 1 } = request.query;
+      const pageNum = page;
       const limit = 20;
 
       const [bookings, total] = await Promise.all([
@@ -236,7 +284,7 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Params: { id: string } }>(
     '/bookings/:id',
-    { preHandler: fastify.authenticate },
+    { preHandler: fastify.authenticate, schema: { params: idParams } },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const booking = await fastify.db.booking.findUnique({
@@ -267,7 +315,18 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { new_slot_id: string };
   }>(
     '/bookings/:id/reschedule',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['new_slot_id'],
+          additionalProperties: false,
+          properties: { new_slot_id: uuid },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
 
@@ -307,7 +366,17 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { reason?: string };
   }>(
     '/bookings/:id/cancel',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { reason: { type: 'string', maxLength: 200 } },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const booking = await fastify.db.booking.findUnique({ where: { id: request.params.id } });
@@ -385,7 +454,21 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { rating: number; body?: string };
   }>(
     '/bookings/:id/reviews',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['rating'],
+          additionalProperties: false,
+          properties: {
+            rating: { type: 'integer', minimum: 1, maximum: 5 },
+            body: { type: 'string', maxLength: 1000 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const { rating, body } = request.body;
@@ -434,7 +517,21 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { reason: string; description?: string };
   }>(
     '/bookings/:id/dispute',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['reason'],
+          additionalProperties: false,
+          properties: {
+            reason: { type: 'string', minLength: 3, maxLength: 200 },
+            description: { type: 'string', maxLength: 1000 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const { reason, description } = request.body;
@@ -504,7 +601,7 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Params: { id: string } }>(
     '/bookings/:id/receipt',
-    { preHandler: fastify.authenticate },
+    { preHandler: fastify.authenticate, schema: { params: idParams } },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const booking = await fastify.db.booking.findUnique({
@@ -552,6 +649,21 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Body: { obj: Record<string, unknown>; type: string } }>(
     '/webhooks/paymob',
+    {
+      // Permissive on purpose — Paymob owns the payload shape. We only assert
+      // the two fields we read exist and are the right kind, so a malformed
+      // body is rejected before it reaches verifyPaymobWebhook.
+      schema: {
+        body: {
+          type: 'object',
+          required: ['obj', 'type'],
+          properties: {
+            obj: { type: 'object' },
+            type: { type: 'string' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { obj, type } = request.body;
 

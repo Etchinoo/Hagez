@@ -70,7 +70,30 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/search/businesses',
-    { preHandler: fastify.authenticateOptional },
+    {
+      preHandler: fastify.authenticateOptional,
+      // Public endpoint — validate query params as numeric/ISO strings so bad
+      // input returns 400 instead of NaN/Invalid-Date reaching Prisma (500).
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            category: { type: 'string', maxLength: 30 },
+            district: { type: 'string', maxLength: 100 },
+            date: { type: 'string', pattern: '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$' },
+            party_size: { type: 'string', pattern: '^[0-9]{1,3}$' },
+            min_rating: { type: 'string', pattern: '^[0-5](\\.[0-9]+)?$' },
+            station_type: { type: 'string', maxLength: 30 },
+            has_group_rooms: { type: 'string', enum: ['true', 'false'] },
+            lat: { type: 'string', pattern: '^-?[0-9]{1,3}(\\.[0-9]+)?$' },
+            lng: { type: 'string', pattern: '^-?[0-9]{1,3}(\\.[0-9]+)?$' },
+            page: { type: 'string', pattern: '^[0-9]{1,6}$' },
+            limit: { type: 'string', pattern: '^[0-9]{1,3}$' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const {
         category,

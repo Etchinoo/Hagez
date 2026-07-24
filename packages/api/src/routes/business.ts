@@ -232,7 +232,39 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/slots/bulk',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['rules'],
+          additionalProperties: false,
+          properties: {
+            rules: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 7,
+              items: {
+                type: 'object',
+                required: ['day_of_week', 'open_time', 'close_time', 'slot_duration_min', 'capacity'],
+                additionalProperties: false,
+                properties: {
+                  day_of_week: { type: 'integer', minimum: 0, maximum: 6 },
+                  // HH:MM, 00:00–23:59, plus 24:00 (midnight close used by the dashboard)
+                  open_time: { type: 'string', pattern: '^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$' },
+                  close_time: { type: 'string', pattern: '^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$' },
+                  // minimum 5 prevents the slot-generation loop from spinning forever (DoS)
+                  slot_duration_min: { type: 'integer', minimum: 5, maximum: 1440 },
+                  capacity: { type: 'integer', minimum: 1, maximum: 1000 },
+                  deposit_amount: { type: 'number', minimum: 0, maximum: 100000 },
+                  weeks_ahead: { type: 'integer', minimum: 1, maximum: 12 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -306,7 +338,19 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { period?: string; month?: string } }>(
     '/business/analytics/summary',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            period: { type: 'string', maxLength: 20 },
+            month: { type: 'string', pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
