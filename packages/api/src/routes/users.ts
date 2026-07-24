@@ -16,6 +16,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { buildLoyaltySummary } from '../services/loyalty.js';
 import type { JwtAccessPayload } from '../types/index.js';
+import { pageQueryStr } from '../schemas/common.js';
 
 // Current published policy version — bump on any material change
 const CURRENT_POLICY_VERSION = '1.0';
@@ -69,7 +70,19 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { full_name?: string; language_pref?: string };
   }>(
     '/users/me',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            full_name: { type: 'string', minLength: 1, maxLength: 100 },
+            language_pref: { type: 'string', enum: ['ar', 'en'] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { sub } = request.user as JwtAccessPayload;
       const { full_name, language_pref } = request.body;
@@ -114,7 +127,19 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { paymob_card_token: string };
   }>(
     '/users/me/payment-token',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['paymob_card_token'],
+          additionalProperties: false,
+          properties: {
+            paymob_card_token: { type: 'string', maxLength: 200 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { sub } = request.user as JwtAccessPayload;
       const { paymob_card_token } = request.body;
@@ -159,7 +184,19 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { notify_whatsapp?: boolean; notify_push?: boolean };
   }>(
     '/users/me/notification-prefs',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            notify_whatsapp: { type: 'boolean' },
+            notify_push: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { sub } = request.user as JwtAccessPayload;
       const { notify_whatsapp, notify_push } = request.body;
@@ -210,7 +247,19 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: { page?: string; limit?: string };
   }>(
     '/users/me/loyalty/history',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            page: pageQueryStr,
+            limit: pageQueryStr,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { sub } = request.user as JwtAccessPayload;
       const page  = Math.max(1, parseInt(request.query.page  ?? '1'));
@@ -266,7 +315,18 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Body: { policy_version?: string }; Headers: { 'x-forwarded-for'?: string } }>(
     '/users/me/privacy-accept',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            policy_version: { type: 'string', maxLength: 20 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { sub } = request.user as JwtAccessPayload;
       const version   = request.body?.policy_version ?? CURRENT_POLICY_VERSION;
@@ -300,7 +360,19 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.delete<{ Body: { confirmation: string } }>(
     '/users/me',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['confirmation'],
+          additionalProperties: false,
+          properties: {
+            confirmation: { type: 'string', minLength: 1, maxLength: 50 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { sub } = request.user as JwtAccessPayload;
       const { confirmation } = request.body ?? {};
@@ -383,7 +455,19 @@ const usersRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post(
     '/users/me/push-token',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['expo_push_token'],
+          additionalProperties: false,
+          properties: {
+            expo_push_token: { type: 'string', minLength: 1, maxLength: 300 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { sub } = request.user as JwtAccessPayload;
       const { expo_push_token } = request.body as { expo_push_token: string };
