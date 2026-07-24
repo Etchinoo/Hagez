@@ -88,27 +88,32 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       if (status === 'completed') {
         const depositAmount = Number(booking.deposit_amount);
 
-        await fastify.db.$transaction([
-          fastify.db.booking.update({
-            where: { id: booking.id },
-            data: { status: 'completed', completed_at: now, escrow_status: 'released_to_business' },
-          }),
-          // US-030: Create pending payout record — picked up by daily payout job (US-036)
-          ...(depositAmount > 0
-            ? [fastify.db.payment.create({
-                data: {
-                  booking_id: booking.id,
-                  type: 'deposit',
-                  direction: 'outbound',
-                  amount: depositAmount,
-                  currency: 'EGP',
-                  status: 'pending',
-                  recipient_type: 'business',
-                  recipient_id: booking.business_id,
-                },
-              })]
-            : []),
-        ]);
+        // H5: Atomically claim the transition — only a 'confirmed' booking can be
+        // completed. A duplicate/replayed request finds the status already flipped,
+        // gets count === 0, and is rejected BEFORE the deposit payout can run twice.
+        const claimed = await fastify.db.booking.updateMany({
+          where: { id: booking.id, status: 'confirmed' },
+          data: { status: 'completed', completed_at: now, escrow_status: 'released_to_business' },
+        });
+        if (claimed.count === 0) {
+          return reply.code(409).send({ error: { code: 'INVALID_TRANSITION', message: 'Only a confirmed booking can be completed.', message_ar: 'لا يمكن إكمال الحجز إلا إذا كان مؤكداً.' } });
+        }
+
+        // US-030: Create pending payout record — picked up by daily payout job (US-036)
+        if (depositAmount > 0) {
+          await fastify.db.payment.create({
+            data: {
+              booking_id: booking.id,
+              type: 'deposit',
+              direction: 'outbound',
+              amount: depositAmount,
+              currency: 'EGP',
+              status: 'pending',
+              recipient_type: 'business',
+              recipient_id: booking.business_id,
+            },
+          });
+        }
 
         // US-108 (EP-16): Award loyalty points via loyalty service (tier-aware, with expiry)
         await earnPoints(fastify.db, booking.consumer_id, booking.id, depositAmount, business.name_ar);
@@ -119,10 +124,14 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       if (status === 'no_show') {
-        await fastify.db.booking.update({
-          where: { id: booking.id },
+        // H5: Same atomic guard — only a 'confirmed' booking can be marked no_show.
+        const claimed = await fastify.db.booking.updateMany({
+          where: { id: booking.id, status: 'confirmed' },
           data: { status: 'no_show', no_show_detected_at: now },
         });
+        if (claimed.count === 0) {
+          return reply.code(409).send({ error: { code: 'INVALID_TRANSITION', message: 'Only a confirmed booking can be marked no-show.', message_ar: 'لا يمكن تسجيل غياب إلا لحجز مؤكد.' } });
+        }
         return reply.send({ booking_ref: booking.booking_ref, new_status: 'no_show', payout_triggered: true });
       }
 
@@ -159,7 +168,10 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const slot = await fastify.db.slot.findUniqueOrThrow({ where: { id: slot_id } });
+      const slot = await fastify.db.slot.findFirst({ where: { id: slot_id, business_id: business.id } });
+      if (!slot) {
+        return reply.code(404).send({ error: { code: 'SLOT_NOT_FOUND', message: 'Slot not found.', message_ar: 'الوقت غير موجود.' } });
+      }
 
       // Generate booking ref
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -252,6 +264,26 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
 
       const { rules } = request.body;
+
+      // H7: Guard the slot-generation while-loop below. It advances by slot_duration_min
+      // each iteration, so a value <= 0 makes it spin forever (unbounded slot creation /
+      // DoS). Require an integer >= 5, and bound capacity and weeks_ahead so a single
+      // request can't be turned into an unbounded createMany.
+      if (!Array.isArray(rules) || rules.length === 0 || rules.length > 7) {
+        return reply.code(400).send({ error: { code: 'INVALID_RULES', message: 'rules must be a non-empty array (max 7 entries).', message_ar: 'قواعد المواعيد مطلوبة (7 كحد أقصى).' } });
+      }
+      for (const r of rules) {
+        if (!Number.isInteger(r.slot_duration_min) || r.slot_duration_min < 5 || r.slot_duration_min > 1440) {
+          return reply.code(400).send({ error: { code: 'INVALID_SLOT_DURATION', message: 'slot_duration_min must be an integer of at least 5 minutes.', message_ar: 'مدة الموعد يجب أن تكون رقماً صحيحاً لا يقل عن 5 دقائق.' } });
+        }
+        if (!Number.isInteger(r.capacity) || r.capacity < 1 || r.capacity > 1000) {
+          return reply.code(400).send({ error: { code: 'INVALID_CAPACITY', message: 'capacity must be an integer between 1 and 1000.', message_ar: 'السعة يجب أن تكون رقماً صحيحاً بين 1 و 1000.' } });
+        }
+        if (r.weeks_ahead !== undefined && (!Number.isInteger(r.weeks_ahead) || r.weeks_ahead < 1 || r.weeks_ahead > 52)) {
+          return reply.code(400).send({ error: { code: 'INVALID_WEEKS_AHEAD', message: 'weeks_ahead must be an integer between 1 and 52.', message_ar: 'عدد الأسابيع يجب أن يكون بين 1 و 52.' } });
+        }
+      }
+
       const slotsToCreate = [];
       const weeksAhead = rules[0]?.weeks_ahead ?? 4;
 
@@ -724,9 +756,15 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Section not found.', message_ar: 'القسم غير موجود.' } });
       }
 
+      const { name_ar, name_en, capacity, is_active } = request.body;
       const updated = await fastify.db.businessSection.update({
         where: { id: request.params.id },
-        data: request.body,
+        data: {
+          ...(name_ar !== undefined ? { name_ar } : {}),
+          ...(name_en !== undefined ? { name_en } : {}),
+          ...(capacity !== undefined ? { capacity } : {}),
+          ...(is_active !== undefined ? { is_active } : {}),
+        },
       });
 
       return reply.send(updated);
@@ -875,9 +913,15 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: { code: 'NOT_FOUND', message_ar: 'القاعدة غير موجودة.' } });
       }
 
+      const { is_active, multiplier, discount_pct, name_ar } = request.body;
       const updated = await fastify.db.pricingRule.update({
         where: { id: request.params.id },
-        data: request.body,
+        data: {
+          ...(is_active !== undefined ? { is_active } : {}),
+          ...(multiplier !== undefined ? { multiplier } : {}),
+          ...(discount_pct !== undefined ? { discount_pct } : {}),
+          ...(name_ar !== undefined ? { name_ar } : {}),
+        },
       });
 
       return reply.send(updated);

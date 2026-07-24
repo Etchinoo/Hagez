@@ -659,8 +659,11 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
           );
         }
       } else {
-        await fastify.db.booking.update({
-          where: { id: booking.id },
+        // H4: Only expire a booking that is still awaiting payment. Guarding on
+        // status (via updateMany) prevents a late / out-of-order FAILED webhook
+        // from voiding an already-confirmed (paid) booking.
+        await fastify.db.booking.updateMany({
+          where: { id: booking.id, status: 'pending_payment' },
           data: { status: 'expired' },
         });
       }

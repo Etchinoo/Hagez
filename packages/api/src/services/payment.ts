@@ -229,6 +229,14 @@ export async function executeNoShowSplit(
     include: { business: true },
   });
 
+  // Idempotency guard (H2): never run the 75/25 no-show split twice.
+  // A duplicate trigger (webhook retry, concurrent job, re-run) must be a
+  // no-op once escrow is already split, otherwise duplicate payout/retention
+  // Payment rows are created and the business is overpaid.
+  if (booking.escrow_status === 'split_executed') {
+    return;
+  }
+
   const depositAmount = Number(booking.deposit_amount);
   const businessPct = env.NO_SHOW_SPLIT_BUSINESS_PCT / 100;
   const platformPct = env.NO_SHOW_SPLIT_PLATFORM_PCT / 100;

@@ -81,18 +81,47 @@ async function runDailyPayouts(db: PrismaClient): Promise<void> {
       continue;
     }
 
+    // H3: Atomically CLAIM these rows BEFORE disbursing, so a second concurrent
+    // runner (or a retry after a mid-flight crash) can't disburse the same
+    // payouts twice. Flip pending→completed first; only the runner that wins
+    // the claim performs the Paymob HTTP disbursement.
+    const claimedAt = new Date();
+    const claim = await db.payment.updateMany({
+      where: { id: { in: paymentIds }, status: 'pending' },
+      data: { status: 'completed', settled_at: claimedAt },
+    });
+
+    if (claim.count === 0) {
+      // Another runner already claimed these rows — skip.
+      console.log(`[payout-job] ${business.name_ar}: payouts already claimed by another runner — skipping`);
+      continue;
+    }
+
+    if (claim.count !== paymentIds.length) {
+      // Partial claim — a concurrent runner grabbed some of these rows between
+      // findMany and now. Release only the rows WE just claimed (matched by
+      // settled_at) and skip; the next scheduled run retries cleanly.
+      await db.payment.updateMany({
+        where: { id: { in: paymentIds }, status: 'completed', settled_at: claimedAt },
+        data: { status: 'pending', settled_at: null },
+      });
+      console.log(`[payout-job] ${business.name_ar}: partial claim (${claim.count}/${paymentIds.length}) — reverted and skipping`);
+      continue;
+    }
+
     try {
       await disburseToBusiness(token, businessId, totalAmount, paymentIds);
-
-      // Mark all payout records as completed
-      await db.payment.updateMany({
-        where: { id: { in: paymentIds } },
-        data: { status: 'completed', settled_at: new Date() },
-      });
 
       console.log(`[payout-job] ✅ Disbursed EGP ${totalAmount} to ${business.name_ar}`);
     } catch (err) {
       console.error(`[payout-job] ❌ Payout failed for ${business.name_ar}:`, err);
+
+      // H3: Disbursement failed — release our claim (revert to pending,
+      // settled_at null) so the next scheduled run retries these payouts.
+      await db.payment.updateMany({
+        where: { id: { in: paymentIds }, settled_at: claimedAt },
+        data: { status: 'pending', settled_at: null },
+      });
 
       // US-036: Failed payout → WhatsApp alert to business owner
       await sendPayoutFailedAlert(db, businessId, totalAmount).catch((notifErr) =>
@@ -132,7 +161,7 @@ async function disburseToBusiness(
       amount_cents: Math.round(amountEgp * 100),
       currency: 'EGP',
       description: `Reservr payout — ${paymentIds.length} booking(s)`,
-      merchant_order_id: `PAYOUT-${businessId.slice(0, 8)}-${Date.now()}`,
+      merchant_order_id: `PAYOUT-${businessId.slice(0, 8)}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
     }
   );
 }

@@ -193,6 +193,25 @@ export async function createBookingWithHold(
     db.business.findUniqueOrThrow({ where: { id: business_id } }),
   ]);
 
+  // Security (H6): the slot must belong to the business the caller claims.
+  // Otherwise a consumer could book another business's slot under this
+  // business_id — enabling cross-business booking + platform-fee manipulation.
+  if (slot.business_id !== business_id) {
+    throw new BookingEngineError('SLOT_NOT_FOUND');
+  }
+
+  // If a resource (staff/table/court/bay) is supplied, it must belong to the
+  // same business too.
+  if (resource_id) {
+    const resource = await db.resource.findUnique({
+      where: { id: resource_id },
+      select: { business_id: true },
+    });
+    if (!resource || resource.business_id !== business_id) {
+      throw new BookingEngineError('SLOT_NOT_FOUND');
+    }
+  }
+
   const platformFee = PLATFORM_FEES[business.category] ?? 25;
 
   // 4. Generate booking ref (retry up to 3 times on collision)
@@ -316,6 +335,16 @@ export async function rescheduleBooking(
     throw new BookingEngineError('RESCHEDULE_LIMIT_REACHED');
   }
 
+  // Security (M8): the new slot must belong to the same business as the
+  // booking. Prevents rescheduling into another business's inventory.
+  const newSlot = await db.slot.findUnique({
+    where: { id: newSlotId },
+    select: { business_id: true },
+  });
+  if (!newSlot || newSlot.business_id !== booking.business_id) {
+    throw new BookingEngineError('SLOT_NOT_FOUND');
+  }
+
   // Check new slot availability
   const availability = await checkSlotAvailability(db, newSlotId, booking.party_size);
   if (!availability.available) {
@@ -405,17 +434,25 @@ export async function cancelBooking(
 
 // ── No-Show Transition ───────────────────────────────────────
 
-export async function markNoShow(db: PrismaClient, bookingId: string): Promise<void> {
-  const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-  await db.booking.update({
-    where: { id: bookingId },
+export async function markNoShow(db: PrismaClient, bookingId: string): Promise<boolean> {
+  // Security (H2): atomically claim the booking so concurrent no-show detection
+  // runs can't each transition it (and each fire the 75/25 payout split /
+  // increment no_show_count). Only a still-confirmed booking is claimable.
+  const claimed = await db.booking.updateMany({
+    where: { id: bookingId, status: 'confirmed' },
     data: { status: 'no_show', no_show_detected_at: new Date() },
   });
+  if (claimed.count === 0) {
+    return false; // already claimed by another run, or no longer confirmed
+  }
+
+  const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
   await db.user.update({
     where: { id: booking.consumer_id },
     data: { no_show_count: { increment: 1 } },
   });
   await logStateTransition(db, bookingId, 'confirmed', 'no_show', 'system', 'auto_detected');
+  return true;
 }
 
 // ── Custom Errors ────────────────────────────────────────────
