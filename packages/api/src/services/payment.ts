@@ -193,6 +193,9 @@ export async function executeNoShowSplit(
     include: { business: true },
   });
 
+  // H2: idempotency guard — never execute the split twice for one booking.
+  if (booking.escrow_status === 'split_executed') return;
+
   const depositAmount = Number(booking.deposit_amount);
   const businessPct = env.NO_SHOW_SPLIT_BUSINESS_PCT / 100;
   const platformPct = env.NO_SHOW_SPLIT_PLATFORM_PCT / 100;

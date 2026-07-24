@@ -197,6 +197,19 @@ export async function createBookingWithHold(
     db.business.findUniqueOrThrow({ where: { id: business_id } }),
   ]);
 
+  // H6: bind the slot to the claimed business. Without this a consumer could
+  // pair another business's slot with a cheaper business_id (platform-fee
+  // manipulation) or create cross-business booking rows.
+  if (slot.business_id !== business_id) {
+    throw new BookingEngineError('SLOT_NOT_FOUND');
+  }
+  if (resource_id) {
+    const resource = await db.resource.findUnique({ where: { id: resource_id }, select: { business_id: true } });
+    if (!resource || resource.business_id !== business_id) {
+      throw new BookingEngineError('SLOT_NOT_FOUND');
+    }
+  }
+
   const platformFee = PLATFORM_FEES[business.category] ?? 25;
 
   // 4. Generate booking ref (retry up to 3 times on collision)
@@ -323,6 +336,14 @@ export async function rescheduleBooking(
     throw new BookingEngineError('RESCHEDULE_LIMIT_REACHED');
   }
 
+  // M8: bind the new slot to the booking's business — prevents repointing a
+  // booking to another business's slot (draining their capacity, and leaving
+  // the booking's business_id stale).
+  const newSlot = await db.slot.findUniqueOrThrow({ where: { id: newSlotId }, select: { business_id: true } });
+  if (newSlot.business_id !== booking.business_id) {
+    throw new BookingEngineError('SLOT_NOT_FOUND');
+  }
+
   // Check new slot availability
   const availability = await checkSlotAvailability(db, newSlotId, booking.party_size);
   if (!availability.available) {
@@ -412,17 +433,26 @@ export async function cancelBooking(
 
 // ── No-Show Transition ───────────────────────────────────────
 
-export async function markNoShow(db: PrismaClient, bookingId: string): Promise<void> {
+// Returns true if THIS call transitioned the booking (claimed it), false if a
+// concurrent runner already did. Callers must only run the no-show payout split
+// when this returns true (H2 — prevents double payout).
+export async function markNoShow(db: PrismaClient, bookingId: string): Promise<boolean> {
   const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-  await db.booking.update({
-    where: { id: bookingId },
+
+  // Atomic claim: only confirmed → no_show. If another runner already claimed
+  // it, count === 0 and we skip the counter increment + split entirely.
+  const claim = await db.booking.updateMany({
+    where: { id: bookingId, status: 'confirmed' },
     data: { status: 'no_show', no_show_detected_at: new Date() },
   });
+  if (claim.count === 0) return false;
+
   await db.user.update({
     where: { id: booking.consumer_id },
     data: { no_show_count: { increment: 1 } },
   });
   await logStateTransition(db, bookingId, 'confirmed', 'no_show', 'system', 'auto_detected');
+  return true;
 }
 
 // ── Custom Errors ────────────────────────────────────────────

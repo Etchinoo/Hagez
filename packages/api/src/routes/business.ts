@@ -84,45 +84,51 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       const { status } = request.body;
       const now = new Date();
 
+      if (status !== 'completed' && status !== 'no_show') {
+        return reply.code(400).send({ error: { code: 'INVALID_STATUS', message: 'Status must be "completed" or "no_show".', message_ar: 'الحالة يجب أن تكون "مكتمل" أو "غياب".' } });
+      }
+
+      // H5: only a confirmed booking can be completed / no-show'd, and the
+      // transition is claimed atomically (updateMany where status='confirmed'),
+      // so a duplicate request cannot trigger the deposit payout twice.
+      const invalidState = () => reply.code(409).send({ error: { code: 'INVALID_STATE', message: 'Only a confirmed booking can be updated.', message_ar: 'يمكن تحديث الحجوزات المؤكدة فقط.' } });
+      if (booking.status !== 'confirmed') return invalidState();
+
       if (status === 'completed') {
+        const claim = await fastify.db.booking.updateMany({
+          where: { id: booking.id, status: 'confirmed' },
+          data: { status: 'completed', completed_at: now, escrow_status: 'released_to_business' },
+        });
+        if (claim.count === 0) return invalidState();
+
         const depositAmount = Number(booking.deposit_amount);
+        if (depositAmount > 0) {
+          // US-030: pending payout record — picked up by the daily payout job (US-036)
+          await fastify.db.payment.create({
+            data: {
+              booking_id: booking.id,
+              type: 'deposit',
+              direction: 'outbound',
+              amount: depositAmount,
+              currency: 'EGP',
+              status: 'pending',
+              recipient_type: 'business',
+              recipient_id: booking.business_id,
+            },
+          });
+        }
 
-        await fastify.db.$transaction([
-          fastify.db.booking.update({
-            where: { id: booking.id },
-            data: { status: 'completed', completed_at: now, escrow_status: 'released_to_business' },
-          }),
-          // US-030: Create pending payout record — picked up by daily payout job (US-036)
-          ...(depositAmount > 0
-            ? [fastify.db.payment.create({
-                data: {
-                  booking_id: booking.id,
-                  type: 'deposit',
-                  direction: 'outbound',
-                  amount: depositAmount,
-                  currency: 'EGP',
-                  status: 'pending',
-                  recipient_type: 'business',
-                  recipient_id: booking.business_id,
-                },
-              })]
-            : []),
-        ]);
-
-        // Schedule review prompt 2h after slot end
         await scheduleReviewPrompt(fastify.db, booking.id);
         return reply.send({ booking_ref: booking.booking_ref, new_status: 'completed', payout_triggered: true });
       }
 
-      if (status === 'no_show') {
-        await fastify.db.booking.update({
-          where: { id: booking.id },
-          data: { status: 'no_show', no_show_detected_at: now },
-        });
-        return reply.send({ booking_ref: booking.booking_ref, new_status: 'no_show', payout_triggered: true });
-      }
-
-      return reply.code(400).send({ error: { code: 'INVALID_STATUS', message: 'Status must be "completed" or "no_show".', message_ar: 'الحالة يجب أن تكون "مكتمل" أو "غياب".' } });
+      // status === 'no_show'
+      const noShowClaim = await fastify.db.booking.updateMany({
+        where: { id: booking.id, status: 'confirmed' },
+        data: { status: 'no_show', no_show_detected_at: now },
+      });
+      if (noShowClaim.count === 0) return invalidState();
+      return reply.send({ booking_ref: booking.booking_ref, new_status: 'no_show', payout_triggered: true });
     }
   );
 
@@ -155,7 +161,12 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const slot = await fastify.db.slot.findUniqueOrThrow({ where: { id: slot_id } });
+      // M7: the slot must belong to the caller's own business — otherwise a
+      // business could book against (and inflate booked_count on) a competitor's slot.
+      const slot = await fastify.db.slot.findFirst({ where: { id: slot_id, business_id: business.id } });
+      if (!slot) {
+        return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Slot not found.', message_ar: 'الوقت غير موجود.' } });
+      }
 
       // Generate booking ref
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -507,10 +518,28 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
       const business = await getAuthenticatedBusiness(user.sub);
       if (!business) return reply.code(404).send({ error: { code: 'BUSINESS_NOT_FOUND', message: 'No business found.', message_ar: 'لا يوجد نشاط تجاري.' } });
 
+      // M9: whitelist fields — never spread req.body into Prisma. An injected
+      // `business_id` (or any unknown field) must not reach the write and repoint
+      // the config at another tenant.
+      const {
+        station_types, has_group_rooms, group_room_capacity,
+        min_players_group_room, genre_options, slot_duration_options,
+        default_slot_duration_min,
+      } = request.body;
+      const data = {
+        ...(station_types !== undefined ? { station_types } : {}),
+        ...(has_group_rooms !== undefined ? { has_group_rooms } : {}),
+        ...(group_room_capacity !== undefined ? { group_room_capacity } : {}),
+        ...(min_players_group_room !== undefined ? { min_players_group_room } : {}),
+        ...(genre_options !== undefined ? { genre_options } : {}),
+        ...(slot_duration_options !== undefined ? { slot_duration_options } : {}),
+        ...(default_slot_duration_min !== undefined ? { default_slot_duration_min } : {}),
+      };
+
       const config = await fastify.db.gamingConfig.upsert({
         where: { business_id: business.id },
-        create: { business_id: business.id, ...request.body },
-        update: { ...request.body },
+        create: { business_id: business.id, ...data },
+        update: data,
       });
 
       return reply.send({ gaming_config: config });

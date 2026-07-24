@@ -144,22 +144,41 @@ describe('confirmBooking', () => {
 
 // ── No-show transition ───────────────────────────────────────
 describe('markNoShow', () => {
-  it('sets status no_show, increments the consumer no_show_count, and logs the transition', async () => {
+  it('atomically claims confirmed→no_show, increments no_show_count, logs, and returns true', async () => {
     const db = {
       booking: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'bk1', consumer_id: 'c1' }),
-        update: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       user: { update: vi.fn() },
       bookingStatusLog: { create: vi.fn() },
     };
-    await markNoShow(db as never, 'bk1');
-    expect(db.booking.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'no_show' }) })
+    const claimed = await markNoShow(db as never, 'bk1');
+    expect(claimed).toBe(true);
+    expect(db.booking.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'bk1', status: 'confirmed' },
+        data: expect.objectContaining({ status: 'no_show' }),
+      })
     );
     expect(db.user.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'c1' }, data: { no_show_count: { increment: 1 } } })
     );
     expect(db.bookingStatusLog.create).toHaveBeenCalled();
+  });
+
+  it('returns false and does NOT increment or log when another runner already claimed it (H2)', async () => {
+    const db = {
+      booking: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'bk1', consumer_id: 'c1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      user: { update: vi.fn() },
+      bookingStatusLog: { create: vi.fn() },
+    };
+    const claimed = await markNoShow(db as never, 'bk1');
+    expect(claimed).toBe(false);
+    expect(db.user.update).not.toHaveBeenCalled();
+    expect(db.bookingStatusLog.create).not.toHaveBeenCalled();
   });
 });

@@ -733,8 +733,12 @@ const bookingRoutes: FastifyPluginAsync = async (fastify) => {
         // US-032: Send Arabic payment receipt via WhatsApp
         await sendPaymentReceipt(fastify.db, booking.id);
       } else {
-        await fastify.db.booking.update({
-          where: { id: booking.id },
+        // H4: only expire a booking that is still awaiting payment. Paymob
+        // delivers webhooks at-least-once and out-of-order, so a late/failed
+        // webhook must NOT void an already-confirmed (paid) booking. The status
+        // filter makes this an atomic no-op when the booking isn't pending.
+        await fastify.db.booking.updateMany({
+          where: { id: booking.id, status: 'pending_payment' },
           data: { status: 'expired' },
         });
       }

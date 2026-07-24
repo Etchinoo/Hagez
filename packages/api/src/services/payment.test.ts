@@ -139,6 +139,23 @@ describe('executeNoShowSplit (75/25 no-show payout split)', () => {
     expect(payments[0].amount as number).toBeCloseTo(24.9975, 4);
     expect(payments[1].amount as number).toBeCloseTo(8.3325, 4);
   });
+
+  it('is idempotent — does nothing when escrow is already split_executed (H2)', async () => {
+    const db = {
+      booking: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: 'bk1', deposit_amount: 100, business_id: 'biz1', business: { id: 'biz1' },
+          escrow_status: 'split_executed',
+        }),
+        update: vi.fn(),
+      },
+      payment: { create: vi.fn() },
+      $transaction: vi.fn().mockResolvedValue([]),
+    };
+    await executeNoShowSplit(db as never, 'bk1');
+    expect(db.payment.create).not.toHaveBeenCalled();
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
 });
 
 // ── Webhook idempotency guard ────────────────────────────────
