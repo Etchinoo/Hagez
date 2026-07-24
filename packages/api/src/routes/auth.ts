@@ -10,12 +10,25 @@
 import type { FastifyPluginAsync } from 'fastify';
 import bcrypt from 'bcryptjs';
 import { env } from '../config/env.js';
+import { egyptPhone, otpCode } from '../schemas/common.js';
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   // ── POST /auth/otp/request ─────────────────────────────────
 
   fastify.post<{ Body: { phone: string } }>(
     '/auth/otp/request',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['phone'],
+          additionalProperties: false,
+          properties: {
+            phone: egyptPhone,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { phone } = request.body;
 
@@ -68,6 +81,19 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Body: { phone: string; otp: string } }>(
     '/auth/otp/verify',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['phone', 'otp'],
+          additionalProperties: false,
+          properties: {
+            phone: egyptPhone,
+            otp: otpCode,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { phone, otp } = request.body;
 
@@ -124,6 +150,19 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Body: { idToken: string; full_name?: string } }>(
     '/auth/firebase/verify',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['idToken'],
+          additionalProperties: false,
+          properties: {
+            idToken: { type: 'string', minLength: 1, maxLength: 4096 },
+            full_name: { type: 'string', minLength: 1, maxLength: 200 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { idToken, full_name } = request.body;
 
@@ -218,6 +257,19 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Body: { provider: 'apple' | 'google'; token: string } }>(
     '/auth/social',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['provider', 'token'],
+          additionalProperties: false,
+          properties: {
+            provider: { type: 'string', enum: ['apple', 'google'] },
+            token: { type: 'string', minLength: 1, maxLength: 4096 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { provider, token } = request.body;
 
@@ -275,6 +327,18 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post<{ Body: { refresh_token: string } }>(
     '/auth/refresh',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['refresh_token'],
+          additionalProperties: false,
+          properties: {
+            refresh_token: { type: 'string', minLength: 1, maxLength: 4096 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       try {
         const payload = fastify.jwt.verify<{ sub: string; phone: string; role: string }>(

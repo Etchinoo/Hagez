@@ -15,6 +15,35 @@ import { annotateSlotPrices, getPricingAnalytics } from '../services/pricing-eng
 import { earnPoints } from '../services/loyalty.js';
 import type { JwtAccessPayload } from '../types/index.js';
 import { env } from '../config/env.js';
+import {
+  uuid,
+  egyptPhone,
+  idParams,
+  pageQueryStr,
+  isoDate,
+  isoMonth,
+  hhmm,
+  businessCategoryEnum,
+  resourceUpdateProps,
+  slotDurationOptionsProps,
+} from '../schemas/common.js';
+
+// ── H8: local schema-property building blocks (business.ts-specific) ────
+// Small fragments reused within this file only; promoted to
+// ../schemas/common.js instead when a shape is shared across route files.
+const nameArField = { type: 'string', maxLength: 200 };
+const nameEnField = { type: 'string', maxLength: 200 };
+const shortText = { type: 'string', maxLength: 500 };
+const longText = { type: 'string', maxLength: 1000 };
+const egpAmount = { type: 'number', minimum: 0, maximum: 100000 };
+const percentageField = { type: 'number', minimum: 0, maximum: 100 };
+const durationMinutesField = { type: 'integer', minimum: 1, maximum: 1440 };
+const capacityField = { type: 'integer', minimum: 1, maximum: 1000 };
+const stringArrayField = (maxItemLen = 100, maxItems = 30) => ({
+  type: 'array',
+  items: { type: 'string', maxLength: maxItemLen },
+  maxItems,
+});
 
 const businessRoutes: FastifyPluginAsync = async (fastify) => {
   // Helper: get the authenticated user's active business
@@ -28,7 +57,19 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { date?: string; view?: string } }>(
     '/business/bookings',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            date: isoDate,
+            view: { type: 'string', enum: ['day', 'week'] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -71,7 +112,20 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { status: 'completed' | 'no_show' };
   }>(
     '/business/bookings/:id/status',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['status'],
+          additionalProperties: false,
+          properties: {
+            status: { type: 'string', enum: ['completed', 'no_show'] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -152,7 +206,24 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/bookings',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['slot_id', 'consumer_name', 'consumer_phone'],
+          additionalProperties: false,
+          properties: {
+            slot_id: uuid,
+            consumer_name: { type: 'string', minLength: 1, maxLength: 200 },
+            consumer_phone: egyptPhone,
+            party_size: { type: 'integer', minimum: 1, maximum: 100 },
+            deposit_waived: { type: 'boolean' },
+            special_requests: shortText,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -206,7 +277,19 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { start?: string; end?: string } }>(
     '/business/slots',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            start: isoDate,
+            end: isoDate,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -257,7 +340,37 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/slots/bulk',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['rules'],
+          additionalProperties: false,
+          properties: {
+            rules: {
+              type: 'array',
+              minItems: 1,
+              maxItems: 7,
+              items: {
+                type: 'object',
+                required: ['day_of_week', 'open_time', 'close_time', 'slot_duration_min', 'capacity'],
+                additionalProperties: false,
+                properties: {
+                  day_of_week: { type: 'integer', minimum: 0, maximum: 6 },
+                  open_time: hhmm,
+                  close_time: hhmm,
+                  slot_duration_min: { type: 'integer', minimum: 5, maximum: 1440 },
+                  capacity: { type: 'integer', minimum: 1, maximum: 1000 },
+                  deposit_amount: { type: 'number', minimum: 0, maximum: 100000 },
+                  weeks_ahead: { type: 'integer', minimum: 1, maximum: 52 },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -332,7 +445,17 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.patch<{ Params: { id: string }; Body: { reason?: string } }>(
     '/business/slots/:id/block',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { reason: shortText },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -351,7 +474,19 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { period?: string; month?: string } }>(
     '/business/analytics/summary',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            period: { type: 'string', maxLength: 50 },
+            month: isoMonth,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -407,7 +542,25 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/policy',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            deposit_type: { type: 'string', enum: ['fixed', 'percentage'] },
+            deposit_value: { type: 'number', minimum: 0, maximum: 100000 },
+            cancellation_window_hours: { type: 'integer', minimum: 0, maximum: 168 },
+            payout_method: { type: 'string', enum: ['bank_transfer', 'paymob_wallet'] },
+            payout_threshold_egp: { type: 'number', minimum: 0, maximum: 1000000 },
+            notify_new_booking_push: { type: 'boolean' },
+            notify_cancellation_push: { type: 'boolean' },
+            notify_payout_whatsapp: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -506,7 +659,17 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { internal_notes: string };
   }>(
     '/business/bookings/:id/notes',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { internal_notes: longText },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -553,7 +716,22 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar: string; name_en?: string; specialisations?: string[]; photo_url?: string };
   }>(
     '/business/staff',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name_ar'],
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: nameEnField,
+            specialisations: stringArrayField(100, 30),
+            photo_url: longText,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -587,7 +765,23 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar?: string; name_en?: string; specialisations?: string[]; photo_url?: string; is_active?: boolean };
   }>(
     '/business/staff/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name_ar: nameArField,
+            name_en: nameEnField,
+            specialisations: stringArrayField(100, 30),
+            photo_url: longText,
+            is_active: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -639,7 +833,22 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar: string; name_en?: string; price_egp: number; duration_min: number };
   }>(
     '/business/services',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name_ar', 'price_egp', 'duration_min'],
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: nameEnField,
+            price_egp: egpAmount,
+            duration_min: durationMinutesField,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -671,7 +880,23 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar?: string; name_en?: string; price_egp?: number; duration_min?: number; is_active?: boolean };
   }>(
     '/business/services/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name_ar: nameArField,
+            name_en: nameEnField,
+            price_egp: egpAmount,
+            duration_min: durationMinutesField,
+            is_active: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -723,7 +948,21 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar: string; name_en?: string; capacity: number };
   }>(
     '/business/sections',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name_ar', 'capacity'],
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: nameEnField,
+            capacity: capacityField,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -745,7 +984,17 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar?: string; name_en?: string; capacity?: number; is_active?: boolean };
   }>(
     '/business/sections/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { ...resourceUpdateProps },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -776,7 +1025,16 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { days?: string } }>(
     '/business/analytics/trend',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { days: pageQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -854,7 +1112,32 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/pricing-rules',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['rule_type', 'name_ar'],
+          additionalProperties: false,
+          properties: {
+            rule_type: { type: 'string', enum: ['surge', 'last_minute', 'demand'] },
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            multiplier: { type: 'number', minimum: 0, maximum: 10 },
+            max_multiplier: { type: 'number', minimum: 0, maximum: 10 },
+            days_of_week: {
+              type: 'array',
+              items: { type: 'integer', minimum: 0, maximum: 6 },
+              maxItems: 7,
+            },
+            hour_start: { type: 'integer', minimum: 0, maximum: 24 },
+            hour_end: { type: 'integer', minimum: 0, maximum: 24 },
+            minutes_before: { type: 'integer', minimum: 0, maximum: 1440 },
+            discount_pct: percentageField,
+            fill_rate_pct: percentageField,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -902,7 +1185,22 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { is_active?: boolean; multiplier?: number; discount_pct?: number; name_ar?: string };
   }>(
     '/business/pricing-rules/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            is_active: { type: 'boolean' },
+            multiplier: { type: 'number', minimum: 0, maximum: 10 },
+            discount_pct: percentageField,
+            name_ar: nameArField,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -932,7 +1230,10 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.delete<{ Params: { id: string } }>(
     '/business/pricing-rules/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: { params: idParams },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -957,7 +1258,16 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { days?: string } }>(
     '/business/analytics/pricing',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { days: pageQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -977,7 +1287,16 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { days?: string } }>(
     '/business/analytics/loyalty',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { days: pageQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1054,7 +1373,22 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/gaming-config',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            station_types: stringArrayField(100, 30),
+            has_group_rooms: { type: 'boolean' },
+            group_room_capacity: { type: 'integer', minimum: 1, maximum: 100 },
+            genre_options: stringArrayField(100, 50),
+            ...slotDurationOptionsProps,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1116,7 +1450,22 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar: string; name_en?: string; station_type: string; capacity?: number };
   }>(
     '/business/stations',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name_ar'],
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: nameEnField,
+            station_type: { type: 'string', maxLength: 100 },
+            capacity: capacityField,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1149,7 +1498,17 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar?: string; name_en?: string; capacity?: number; is_active?: boolean };
   }>(
     '/business/stations/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { ...resourceUpdateProps },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1207,7 +1566,23 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/court-config',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            sport_types: stringArrayField(100, 30),
+            court_type: { type: 'string', maxLength: 100 },
+            surface_type: { type: 'string', maxLength: 100 },
+            has_lighting: { type: 'boolean' },
+            equipment_available: stringArrayField(100, 50),
+            ...slotDurationOptionsProps,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1271,7 +1646,21 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar: string; name_en?: string; capacity?: number };
   }>(
     '/business/courts',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name_ar'],
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: nameEnField,
+            capacity: capacityField,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1303,7 +1692,17 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar?: string; name_en?: string; capacity?: number; is_active?: boolean };
   }>(
     '/business/courts/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { ...resourceUpdateProps },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1361,7 +1760,26 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/car-wash-config',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            vehicle_types: stringArrayField(100, 30),
+            // Shape is a free-form JSON blob elsewhere in the app (and the
+            // upsert default is an array) — accept object or array, just
+            // reject scalars so a malformed value can't reach the JSON column.
+            service_packages: { anyOf: [{ type: 'object' }, { type: 'array' }] },
+            allows_drop_off: { type: 'boolean' },
+            allows_wait: { type: 'boolean' },
+            estimated_duration_minutes: durationMinutesField,
+            ...slotDurationOptionsProps,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1428,7 +1846,21 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar: string; name_en?: string; capacity?: number };
   }>(
     '/business/bays',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['name_ar'],
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: nameEnField,
+            capacity: capacityField,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1461,7 +1893,17 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar?: string; name_en?: string; capacity?: number; is_active?: boolean };
   }>(
     '/business/bays/:id',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { ...resourceUpdateProps },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1528,7 +1970,19 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /business/featured — submit a featured placement request
   fastify.post<{ Body: { plan: 'starter_7' | 'growth_14' | 'pro_30' } }>(
     '/business/featured',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['plan'],
+          additionalProperties: false,
+          properties: {
+            plan: { type: 'string', enum: ['starter_7', 'growth_14', 'pro_30'] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await getAuthenticatedBusiness(user.sub);
@@ -1614,7 +2068,23 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/profile',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name_ar: nameArField,
+            name_en: nameEnField,
+            description_ar: longText,
+            description_en: longText,
+            district: { type: 'string', maxLength: 200 },
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await fastify.db.business.findFirst({
@@ -1644,7 +2114,19 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.patch<{ Body: { full_name: string } }>(
     '/business/owner',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['full_name'],
+          additionalProperties: false,
+          properties: {
+            full_name: { type: 'string', minLength: 1, maxLength: 200 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const { full_name } = request.body;
@@ -1666,7 +2148,20 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { action: 'upgrade' | 'downgrade' | 'cancel'; target_tier?: string };
   }>(
     '/business/plan-change-request',
-    { preHandler: fastify.requireRole(['business_owner']) },
+    {
+      preHandler: fastify.requireRole(['business_owner']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['action'],
+          additionalProperties: false,
+          properties: {
+            action: { type: 'string', enum: ['upgrade', 'downgrade', 'cancel'] },
+            target_tier: { type: 'string', enum: ['free', 'starter', 'growth', 'pro', 'enterprise'] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const user = request.user as JwtAccessPayload;
       const business = await fastify.db.business.findFirst({
@@ -1710,7 +2205,24 @@ const businessRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/business/signup',
-    { preHandler: fastify.authenticate },
+    {
+      preHandler: fastify.authenticate,
+      schema: {
+        body: {
+          type: 'object',
+          required: ['full_name', 'name_ar', 'category', 'district'],
+          additionalProperties: false,
+          properties: {
+            full_name: { type: 'string', minLength: 1, maxLength: 200 },
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: nameEnField,
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+            district: { type: 'string', minLength: 1, maxLength: 200 },
+            description_ar: longText,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const userId = (request.user as JwtAccessPayload).sub;
       const phone  = (request.user as JwtAccessPayload).phone;

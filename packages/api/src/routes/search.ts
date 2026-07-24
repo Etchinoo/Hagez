@@ -9,6 +9,26 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import { annotateSlotPrices } from '../services/pricing-engine.js';
+import { idParams, uuid, isoDate, pageQueryStr, businessCategoryEnum } from '../schemas/common.js';
+
+// ── H8: query-string fragments local to this file ─────────────
+// Query params always arrive as strings — bounds are expressed as patterns.
+
+// party_size: 1-50 (mirrors the bound used for booking creation in bookings.ts).
+const partySizeQueryStr = { type: 'string', pattern: '^([1-9]|[1-4][0-9]|50)$' } as const;
+
+// min_rating: 1-5 stars, up to 2 decimal places (rating_avg is Decimal(3,2)).
+const minRatingQueryStr = { type: 'string', pattern: '^[1-5](\\.[0-9]{1,2})?$' } as const;
+
+// lat: -90..90, lng: -180..180, up to 7 decimal places.
+const latQueryStr = {
+  type: 'string',
+  pattern: '^-?([0-8]?[0-9](\\.[0-9]{1,7})?|90(\\.0{1,7})?)$',
+} as const;
+const lngQueryStr = {
+  type: 'string',
+  pattern: '^-?((1[0-7][0-9]|[0-9]{1,2})(\\.[0-9]{1,7})?|180(\\.0{1,7})?)$',
+} as const;
 
 // ── Haversine distance (km) ────────────────────────────────────
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -73,7 +93,30 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/search/businesses',
-    { preHandler: fastify.authenticateOptional },
+    {
+      preHandler: fastify.authenticateOptional,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+            district: { type: 'string', maxLength: 100 },
+            date: isoDate,
+            party_size: partySizeQueryStr,
+            min_rating: minRatingQueryStr,
+            cuisine_type: { type: 'string', maxLength: 50 },
+            service_type: { type: 'string', maxLength: 50 },
+            indoor_outdoor: { type: 'string', maxLength: 20 },
+            price_range: { type: 'string', maxLength: 20 },
+            lat: latQueryStr,
+            lng: lngQueryStr,
+            page: pageQueryStr,
+            limit: pageQueryStr,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const {
         category,
@@ -233,7 +276,19 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { category?: string; limit?: string } }>(
     '/search/featured',
-    { preHandler: fastify.authenticateOptional },
+    {
+      preHandler: fastify.authenticateOptional,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+            limit: pageQueryStr,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { category, limit = '6' } = request.query;
       const limitNum = Math.min(12, Math.max(1, parseInt(limit)));
@@ -287,7 +342,21 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { q: string; category?: string } }>(
     '/search/autocomplete',
-    { preHandler: fastify.authenticateOptional },
+    {
+      preHandler: fastify.authenticateOptional,
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            // Not required: the handler already gracefully returns `{ suggestions: [] }`
+            // when `q` is missing/short — preserve that behavior rather than 400ing it.
+            q: { type: 'string', maxLength: 200 },
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { q, category } = request.query;
       if (!q || q.length < 2) return reply.send({ suggestions: [] });
@@ -325,7 +394,10 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Params: { id: string } }>(
     '/businesses/:id',
-    { preHandler: fastify.authenticateOptional },
+    {
+      preHandler: fastify.authenticateOptional,
+      schema: { params: idParams },
+    },
     async (request, reply) => {
       const business = await fastify.db.business.findUnique({
         where: { id: request.params.id, status: 'active' },
@@ -403,7 +475,21 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: { date?: string; party_size?: string; resource_id?: string };
   }>(
     '/businesses/:id/slots',
-    { preHandler: fastify.authenticateOptional },
+    {
+      preHandler: fastify.authenticateOptional,
+      schema: {
+        params: idParams,
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            date: isoDate,
+            party_size: partySizeQueryStr,
+            resource_id: uuid,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { date, party_size = '1', resource_id } = request.query;
@@ -455,35 +541,51 @@ const searchRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get<{
     Params: { id: string };
     Querystring: { page?: string; limit?: string };
-  }>('/businesses/:id/reviews', async (request, reply) => {
-    const { id } = request.params;
-    const page = parseInt(request.query.page ?? '1');
-    const limit = Math.min(20, parseInt(request.query.limit ?? '10'));
-    const offset = (page - 1) * limit;
+  }>(
+    '/businesses/:id/reviews',
+    {
+      schema: {
+        params: idParams,
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            page: pageQueryStr,
+            limit: pageQueryStr,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params;
+      const page = parseInt(request.query.page ?? '1');
+      const limit = Math.min(20, parseInt(request.query.limit ?? '10'));
+      const offset = (page - 1) * limit;
 
-    const [reviews, total, business] = await Promise.all([
-      fastify.db.review.findMany({
-        where: { business_id: id, status: 'approved' },
-        include: { consumer: { select: { full_name: true } } },
-        orderBy: { created_at: 'desc' },
-        skip: offset,
-        take: limit,
-      }),
-      fastify.db.review.count({ where: { business_id: id, status: 'approved' } }),
-      fastify.db.business.findUnique({ where: { id }, select: { rating_avg: true, review_count: true } }),
-    ]);
+      const [reviews, total, business] = await Promise.all([
+        fastify.db.review.findMany({
+          where: { business_id: id, status: 'approved' },
+          include: { consumer: { select: { full_name: true } } },
+          orderBy: { created_at: 'desc' },
+          skip: offset,
+          take: limit,
+        }),
+        fastify.db.review.count({ where: { business_id: id, status: 'approved' } }),
+        fastify.db.business.findUnique({ where: { id }, select: { rating_avg: true, review_count: true } }),
+      ]);
 
-    return reply.send({
-      reviews: reviews.map((r) => ({
-        rating: r.rating,
-        body: r.body,
-        consumer_name: r.consumer.full_name,
-        created_at: r.created_at.toISOString(),
-      })),
-      avg_rating: business && business.review_count >= 5 ? Number(business.rating_avg) : null,
-      total,
-    });
-  });
+      return reply.send({
+        reviews: reviews.map((r) => ({
+          rating: r.rating,
+          body: r.body,
+          consumer_name: r.consumer.full_name,
+          created_at: r.created_at.toISOString(),
+        })),
+        avg_rating: business && business.review_count >= 5 ? Number(business.rating_avg) : null,
+        total,
+      });
+    }
+  );
 };
 
 export default searchRoutes;

@@ -11,6 +11,44 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { initiateRefund, executeNoShowSplit } from '../services/payment.js';
 import { sendDisputeResolved } from '../services/notification.js';
+import {
+  uuid,
+  idParams,
+  pageQueryStr,
+  businessCategoryEnum,
+  businessStatusEnum,
+  bookingStatusEnum,
+} from '../schemas/common.js';
+
+// ── H8: local (admin.ts-scoped) JSON-schema fragments ───────────────────
+// Domain enums/bounds that are only meaningful within this file's routes.
+// Promote to '../schemas/common.js' if another route file needs them too.
+
+// SubscriptionTier (mirrors prisma schema.prisma) — used by business create
+// and the tier-change endpoint.
+const subscriptionTierValues = ['free', 'starter', 'growth', 'pro', 'enterprise'] as const;
+
+// Free-text policy/payout fields shared by POST /admin/businesses (create)
+// and PUT /admin/businesses/:id (update).
+const businessPolicyProps = {
+  policy_deposit_type: { type: 'string', enum: ['fixed', 'percentage'] },
+  policy_deposit_value: { type: 'number', minimum: 0, maximum: 100000 },
+  policy_cancellation_window_hours: { type: 'integer', minimum: 0, maximum: 720 },
+  payout_method: { type: 'string', enum: ['bank_transfer', 'paymob_wallet'] },
+  payout_threshold_egp: { type: 'number', minimum: 0, maximum: 1000000 },
+} as const;
+
+// `:id/:sid` path params (business id + nested business-service id).
+const businessServiceParams = {
+  type: 'object',
+  required: ['id', 'sid'],
+  additionalProperties: false,
+  properties: { id: uuid, sid: uuid },
+} as const;
+
+// Bounded digit-string querystring for BI "days" filters (repeated 3x
+// across /admin/bi/bookings, /admin/bi/payments, /admin/bi/no-shows).
+const daysQueryStr = { type: 'string', pattern: '^[0-9]{1,4}$' };
 
 // US-086 (EP-20): Immutable audit log helper
 // All privileged admin actions must be recorded here.
@@ -44,7 +82,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { page?: string } }>(
     '/admin/reviews/pending',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { page: pageQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const page  = parseInt(request.query.page ?? '1');
       const limit = 20;
@@ -75,7 +122,21 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { action: 'approve' | 'reject'; reason?: string };
   }>(
     '/admin/reviews/:id/moderate',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['action'],
+          additionalProperties: false,
+          properties: {
+            action: { type: 'string', enum: ['approve', 'reject'] },
+            reason: { type: 'string', maxLength: 500 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { action, reason } = request.body;
@@ -119,7 +180,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { page?: string } }>(
     '/admin/businesses/pending',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { page: pageQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const page = parseInt(request.query.page ?? '1');
       const limit = 20;
@@ -146,7 +216,21 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { approved: boolean; rejection_reason?: string };
   }>(
     '/admin/businesses/:id/verify',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['approved'],
+          additionalProperties: false,
+          properties: {
+            approved: { type: 'boolean' },
+            rejection_reason: { type: 'string', maxLength: 500 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { approved, rejection_reason } = request.body;
@@ -195,7 +279,20 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { reason: string };
   }>(
     '/admin/businesses/:id/suspend',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['reason'],
+          additionalProperties: false,
+          properties: {
+            reason: { type: 'string', maxLength: 500 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { reason } = request.body;
@@ -226,7 +323,19 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { status?: string; page?: string } }>(
     '/admin/disputes',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            status: { type: 'string', enum: [...bookingStatusEnum] },
+            page: pageQueryStr,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const page = parseInt(request.query.page ?? '1');
       const limit = 20;
@@ -254,7 +363,22 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { resolution: 'uphold' | 'reverse' | 'partial'; refund_amount?: number; reason: string };
   }>(
     '/admin/disputes/:id/resolve',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['resolution', 'reason'],
+          additionalProperties: false,
+          properties: {
+            resolution: { type: 'string', enum: ['uphold', 'reverse', 'partial'] },
+            refund_amount: { type: 'number', minimum: 0, maximum: 100000 },
+            reason: { type: 'string', maxLength: 1000 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { resolution, refund_amount, reason } = request.body;
@@ -387,7 +511,17 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { q: string } }>(
     '/admin/bookings/search',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['q'],
+          additionalProperties: false,
+          properties: { q: { type: 'string', maxLength: 30 } },
+        },
+      },
+    },
     async (request, reply) => {
       const { q } = request.query;
       if (!q || q.trim().length < 3) {
@@ -427,7 +561,21 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { booking_id: string; amount_egp: number; reason: string };
   }>(
     '/admin/refunds',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['booking_id', 'amount_egp', 'reason'],
+          additionalProperties: false,
+          properties: {
+            booking_id: uuid,
+            amount_egp: { type: 'number', exclusiveMinimum: 0, maximum: 100000 },
+            reason: { type: 'string', maxLength: 1000 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { booking_id, amount_egp, reason } = request.body;
       const actor = request.user as { sub: string; role: string; phone: string };
@@ -505,7 +653,19 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /admin/featured — list all listings
   fastify.get<{ Querystring: { status?: string; page?: string } }>(
     '/admin/featured',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            status: { type: 'string', enum: ['pending_payment', 'active', 'expired', 'cancelled'] },
+            page: pageQueryStr,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const page   = Math.max(1, parseInt(request.query.page ?? '1'));
       const limit  = 20;
@@ -534,7 +694,21 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { action: 'approve' | 'expire' | 'cancel'; notes?: string };
   }>(
     '/admin/featured/:id',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['action'],
+          additionalProperties: false,
+          properties: {
+            action: { type: 'string', enum: ['approve', 'expire', 'cancel'] },
+            notes: { type: 'string', maxLength: 500 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params;
       const { action, notes } = request.body;
@@ -609,7 +783,21 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/admin/audit-log',
-    { preHandler: fastify.requireRole(['super_admin']) },
+    {
+      preHandler: fastify.requireRole(['super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            action: { type: 'string', maxLength: 100 },
+            actor_id: uuid,
+            page: pageQueryStr,
+            limit: pageQueryStr,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const page      = Math.max(1, parseInt(request.query.page ?? '1'));
       const pageLimit = Math.min(100, parseInt(request.query.limit ?? '50'));
@@ -682,7 +870,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { days?: string } }>(
     '/admin/bi/bookings',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { days: daysQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const days = parseInt(request.query.days ?? '30');
       const { since } = biDateRange(days);
@@ -786,7 +983,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { weeks?: string } }>(
     '/admin/bi/growth',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { weeks: { type: 'string', pattern: '^[0-9]{1,3}$' } },
+        },
+      },
+    },
     async (request, reply) => {
       const weeks = Math.min(parseInt(request.query.weeks ?? '12'), 52);
       const CATEGORIES = ['restaurant', 'salon', 'court', 'gaming_cafe', 'car_wash'];
@@ -851,7 +1057,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { days?: string } }>(
     '/admin/bi/payments',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { days: daysQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const days = parseInt(request.query.days ?? '30');
       const { since } = biDateRange(days);
@@ -924,7 +1139,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { days?: string } }>(
     '/admin/bi/no-shows',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { days: daysQueryStr },
+        },
+      },
+    },
     async (request, reply) => {
       const days = parseInt(request.query.days ?? '30');
       const { since } = biDateRange(days);
@@ -1017,7 +1241,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { status?: string } }>(
     '/admin/businesses',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { status: { type: 'string', enum: [...businessStatusEnum] } },
+        },
+      },
+    },
     async (request, reply) => {
       const { status } = request.query;
       const businesses = await fastify.db.business.findMany({
@@ -1033,7 +1266,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Params: { id: string } }>(
     '/admin/businesses/:id',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: { params: idParams },
+    },
     async (request, reply) => {
       const business = await fastify.db.business.findUnique({
         where: { id: request.params.id },
@@ -1070,7 +1306,31 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/admin/businesses',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['owner_phone', 'name_ar', 'category', 'district'],
+          additionalProperties: false,
+          properties: {
+            // Pre-normalization raw phone: handler accepts +20.., 0020.., 0.., or
+            // bare-digit forms and normalizes them — so this stays lenient (digits
+            // + optional leading '+') rather than the strict `egyptPhone` E.164 shape.
+            owner_phone: { type: 'string', pattern: '^\\+?[0-9]{8,15}$' },
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: { type: 'string', maxLength: 200 },
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+            district: { type: 'string', minLength: 1, maxLength: 100 },
+            status: { type: 'string', enum: [...businessStatusEnum] },
+            subscription_tier: { type: 'string', enum: [...subscriptionTierValues] },
+            description_ar: { type: 'string', maxLength: 2000 },
+            description_en: { type: 'string', maxLength: 2000 },
+            ...businessPolicyProps,
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const {
         owner_phone: rawPhone, name_ar, name_en, category, district,
@@ -1152,7 +1412,29 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/admin/businesses/:id',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: { type: 'string', maxLength: 200 },
+            description_ar: { type: 'string', maxLength: 2000 },
+            description_en: { type: 'string', maxLength: 2000 },
+            district: { type: 'string', minLength: 1, maxLength: 100 },
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+            status: { type: 'string', enum: [...businessStatusEnum] },
+            ...businessPolicyProps,
+            notify_new_booking_push: { type: 'boolean' },
+            notify_cancellation_push: { type: 'boolean' },
+            notify_payout_whatsapp: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const business = await fastify.db.business.findUnique({ where: { id: request.params.id } });
       if (!business) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Business not found.' } });
@@ -1196,7 +1478,18 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { tier: string };
   }>(
     '/admin/businesses/:id/tier',
-    { preHandler: fastify.requireRole(['super_admin']) },
+    {
+      preHandler: fastify.requireRole(['super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['tier'],
+          additionalProperties: false,
+          properties: { tier: { type: 'string', enum: [...subscriptionTierValues] } },
+        },
+      },
+    },
     async (request, reply) => {
       const { tier } = request.body;
       const validTiers = ['free', 'starter', 'growth', 'pro', 'enterprise'];
@@ -1214,7 +1507,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Params: { id: string } }>(
     '/admin/businesses/:id/services',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: { params: idParams },
+    },
     async (request, reply) => {
       const services = await fastify.db.businessService.findMany({
         where: { business_id: request.params.id },
@@ -1231,7 +1527,23 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar: string; name_en?: string; price_egp: number; duration_min: number };
   }>(
     '/admin/businesses/:id/services',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          required: ['name_ar', 'price_egp', 'duration_min'],
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: { type: 'string', maxLength: 200 },
+            price_egp: { type: 'number', minimum: 0, maximum: 1000000 },
+            duration_min: { type: 'integer', minimum: 1, maximum: 1440 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const business = await fastify.db.business.findUnique({ where: { id: request.params.id } });
       if (!business) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'Business not found.' } });
@@ -1258,7 +1570,23 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     Body: { name_ar?: string; name_en?: string; price_egp?: number; duration_min?: number; is_active?: boolean };
   }>(
     '/admin/businesses/:id/services/:sid',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: businessServiceParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: { type: 'string', maxLength: 200 },
+            price_egp: { type: 'number', minimum: 0, maximum: 1000000 },
+            duration_min: { type: 'integer', minimum: 1, maximum: 1440 },
+            is_active: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { name_ar, name_en, price_egp, duration_min, is_active } = request.body;
       const updated = await fastify.db.businessService.update({
@@ -1279,7 +1607,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.delete<{ Params: { id: string; sid: string } }>(
     '/admin/businesses/:id/services/:sid',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: { params: businessServiceParams },
+    },
     async (_request, reply) => {
       await fastify.db.businessService.delete({ where: { id: _request.params.sid } });
       return reply.send({ ok: true });
@@ -1292,7 +1623,16 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Querystring: { category?: string } }>(
     '/admin/services',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { category: { type: 'string', enum: [...businessCategoryEnum] } },
+        },
+      },
+    },
     async (request, reply) => {
       const { category } = request.query;
       const items = await fastify.db.serviceCatalog.findMany({
@@ -1314,7 +1654,22 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/admin/services',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        body: {
+          type: 'object',
+          required: ['category', 'name_ar', 'typical_duration_min'],
+          additionalProperties: false,
+          properties: {
+            category: { type: 'string', enum: [...businessCategoryEnum] },
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: { type: 'string', maxLength: 200 },
+            typical_duration_min: { type: 'integer', minimum: 1, maximum: 1440 },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { category, name_ar, name_en, typical_duration_min } = request.body;
       if (!category || !name_ar || !typical_duration_min) {
@@ -1345,7 +1700,22 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
     };
   }>(
     '/admin/services/:id',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            name_ar: { type: 'string', minLength: 1, maxLength: 200 },
+            name_en: { type: 'string', maxLength: 200 },
+            typical_duration_min: { type: 'integer', minimum: 1, maximum: 1440 },
+            is_active: { type: 'boolean' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const { name_ar, name_en, typical_duration_min, is_active } = request.body;
       const item = await fastify.db.serviceCatalog.update({
@@ -1365,7 +1735,10 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.delete<{ Params: { id: string } }>(
     '/admin/services/:id',
-    { preHandler: fastify.requireRole(['admin', 'super_admin']) },
+    {
+      preHandler: fastify.requireRole(['admin', 'super_admin']),
+      schema: { params: idParams },
+    },
     async (request, reply) => {
       await fastify.db.serviceCatalog.delete({ where: { id: request.params.id } });
       return reply.send({ ok: true });
