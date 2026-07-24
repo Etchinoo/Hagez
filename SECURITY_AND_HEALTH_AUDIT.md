@@ -8,6 +8,27 @@
 
 ---
 
+## Remediation status (branch `claude/sleepy-ride`)
+
+**Fixed & tested (57 unit tests green, 0 new type errors):**
+- ✅ **H1** token confusion — separate refresh secret + `type` claim (`57007ba`)
+- ✅ **H2** no-show split idempotency — atomic claim + escrow guard (`22776cc`)
+- ✅ **H3** payout double-disburse — atomic claim + deterministic idempotency key (`4de3c78`)
+- ✅ **H4** webhook voiding paid bookings — status-guarded expiry (`22776cc`)
+- ✅ **H5** business status double-payout — atomic state guard (`22776cc`)
+- ✅ **H6** booking slot↔business binding (`22776cc`)
+- ✅ **H7** bulk-slots DoS — via H8 validation (`slot_duration_min ≥ 5`) (`bbe2066`)
+- ✅ **H8** request validation — auth, bookings, business (bulk/analytics), search (`bbe2066`)
+- ✅ **M7/M8/M9** cross-tenant slot + gaming-config mass-assignment (`22776cc`)
+
+**Still open (not yet fixed):**
+- H8 remainder: `users.ts`, `admin.ts`, and remaining `business.ts` endpoints
+- M1 (OTP CSPRNG + lockout), M2 (persist/verify role vs DB), M3/M4 (rate-limit keying + trustProxy), M5/M6 (no-show-penalty payout path + retry reconciliation), M11 (token revocation/blocklist), M12 (dashboard tokens in localStorage)
+- All Low items
+- **Build blocker:** the API package has 62 pre-existing `tsc` errors (the type-safety findings below); it does not currently `tsc`-build. Must be cleared before a clean production build/deploy.
+
+---
+
 ## Severity summary
 
 | Sev | Count | Theme |
