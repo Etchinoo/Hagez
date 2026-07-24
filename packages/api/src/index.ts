@@ -59,6 +59,16 @@ async function buildApp() {
 
   await fastify.register(jwt, { secret: env.JWT_ACCESS_SECRET });
 
+  // H1: refresh tokens are signed & verified with a SEPARATE secret under a
+  // dedicated namespace, so a refresh token cannot be replayed as an access
+  // token (request.jwtVerify uses the access secret) and vice-versa.
+  await fastify.register(jwt, {
+    secret: env.JWT_REFRESH_SECRET,
+    namespace: 'refresh',
+    jwtVerify: 'refreshVerify',
+    jwtSign: 'refreshSign',
+  });
+
   // ── Infrastructure Plugins ─────────────────────────────────
 
   await fastify.register(databasePlugin);

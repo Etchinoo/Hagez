@@ -9,6 +9,13 @@ import authRoutes from './auth.js';
 async function buildApp(db: Record<string, unknown>): Promise<FastifyInstance> {
   const app = Fastify();
   await app.register(jwt, { secret: process.env.JWT_ACCESS_SECRET as string });
+  // H1: mirror index.ts — refresh tokens use a separate secret + namespace.
+  await app.register(jwt, {
+    secret: process.env.JWT_REFRESH_SECRET as string,
+    namespace: 'refresh',
+    jwtVerify: 'refreshVerify',
+    jwtSign: 'refreshSign',
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   app.decorate('db', db as any);
   app.decorate('authenticate', async (req: { jwtVerify: () => Promise<unknown> }, reply: { code: (n: number) => { send: (b: unknown) => void } }) => {
@@ -88,14 +95,23 @@ describe('POST /auth/refresh', () => {
     await app.close();
   });
 
-  // SECURITY REGRESSION GUARD — documents the token-type-confusion finding:
-  // refresh is verified with the ACCESS secret, so an access token is wrongly
-  // accepted here. When the fix lands (separate refresh secret + `type` claim),
-  // flip this expectation to 401.
-  it('CURRENTLY accepts an ACCESS token as a refresh token (token-type-confusion finding)', async () => {
+  // SECURITY REGRESSION GUARD (H1 fixed): an access token is signed with the
+  // access secret and must NOT be accepted at /auth/refresh (verified with the
+  // separate refresh secret).
+  it('rejects an ACCESS token presented as a refresh token (H1)', async () => {
     const app = await buildApp({});
-    const accessToken = app.jwt.sign({ sub: 'u1', phone: '+201000000000', role: 'consumer' }, { expiresIn: '15m' });
+    const accessToken = app.jwt.sign({ sub: 'u1', phone: '+201000000000', role: 'consumer', type: 'access' }, { expiresIn: '15m' });
     const res = await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refresh_token: accessToken } });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe('INVALID_REFRESH_TOKEN');
+    await app.close();
+  });
+
+  it('accepts a genuine refresh token (signed with the refresh secret) and mints an access token', async () => {
+    const app = await buildApp({});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const refreshToken = (app.jwt as any).refresh.sign({ sub: 'u1', phone: '+201000000000', role: 'consumer', type: 'refresh' }, { expiresIn: '30d' });
+    const res = await app.inject({ method: 'POST', url: '/auth/refresh', payload: { refresh_token: refreshToken } });
     expect(res.statusCode).toBe(200);
     expect(res.json().access_token).toBeTruthy();
     await app.close();

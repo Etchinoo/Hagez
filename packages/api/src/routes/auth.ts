@@ -12,7 +12,13 @@ import bcrypt from 'bcryptjs';
 import { env } from '../config/env.js';
 import { egyptPhone, otpCode } from '../schemas/common.js';
 
+// Typed accessor for the 'refresh' @fastify/jwt namespace registered in index.ts
+// (H1). Avoids leaking `any` while the plugin's types don't know the namespace.
+type RefreshJwt = { sign: (payload: object, opts?: object) => string; verify: <T>(token: string) => T };
+
 const authRoutes: FastifyPluginAsync = async (fastify) => {
+  const refreshJwt = (fastify.jwt as unknown as { refresh: RefreshJwt }).refresh;
+
   // ── POST /auth/otp/request ─────────────────────────────────
 
   fastify.post<{ Body: { phone: string } }>(
@@ -99,11 +105,11 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const accessToken = fastify.jwt.sign(
-        { sub: user.id, phone: user.phone, role: 'consumer' },
+        { sub: user.id, phone: user.phone, role: 'consumer', type: 'access' },
         { expiresIn: env.JWT_ACCESS_EXPIRY }
       );
-      const refreshToken = fastify.jwt.sign(
-        { sub: user.id, phone: user.phone, role: 'consumer' },
+      const refreshToken = refreshJwt.sign(
+        { sub: user.id, phone: user.phone, role: 'consumer', type: 'refresh' },
         { expiresIn: env.JWT_REFRESH_EXPIRY }
       );
 
@@ -127,11 +133,16 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     },
     async (request, reply) => {
       try {
-        const payload = fastify.jwt.verify<{ sub: string; phone: string; role: string }>(
+        // Verified with the REFRESH secret — an access token will not verify here.
+        const payload = refreshJwt.verify<{ sub: string; phone: string; role: string; type?: string }>(
           request.body.refresh_token
         );
+        // Defence in depth: reject anything not explicitly a refresh token.
+        if (payload.type && payload.type !== 'refresh') {
+          throw new Error('not a refresh token');
+        }
         const accessToken = fastify.jwt.sign(
-          { sub: payload.sub, phone: payload.phone, role: payload.role },
+          { sub: payload.sub, phone: payload.phone, role: payload.role, type: 'access' },
           { expiresIn: env.JWT_ACCESS_EXPIRY }
         );
         return reply.send({ access_token: accessToken });
