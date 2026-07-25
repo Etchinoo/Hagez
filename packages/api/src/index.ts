@@ -4,7 +4,7 @@
 // Rate limits: 100 req/min (unauth) | 300 req/min (authed)
 // ============================================================
 
-import Fastify, { type FastifyError } from 'fastify';
+import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import jwt from '@fastify/jwt';
@@ -15,6 +15,7 @@ import databasePlugin from './plugins/database.js';
 import redisPlugin from './plugins/redis.js';
 import authPlugin from './plugins/auth.js';
 import firebasePlugin from './plugins/firebase.js';
+import { errorHandler, notFoundHandler } from './plugins/error-handler.js';
 
 import authRoutes from './routes/auth.js';
 import usersRoutes from './routes/users.js';
@@ -104,6 +105,27 @@ async function buildApp() {
     env: env.NODE_ENV,
   }));
 
+  // ── Global Error / Not-Found Handlers ──────────────────────
+  //
+  // MUST be registered BEFORE the route plugins below. `await
+  // fastify.register(...)` builds each plugin's encapsulated context
+  // immediately, and a context captures the error handler present at the
+  // moment it is created — so setting the handler afterwards leaves every
+  // already-registered route on Fastify's built-in handler instead.
+  //
+  // That was previously the case here (handlers were set after the six
+  // register calls), with two consequences observed in production:
+  //   1. Unhandled errors returned Fastify's default body, which includes the
+  //      raw internal `message` — leaking Prisma/driver detail to callers
+  //      rather than the generic text the handler is written to return.
+  //   2. Schema validation rejections returned Fastify's shape
+  //      ({statusCode, code: 'FST_ERR_VALIDATION', error, message}) instead of
+  //      the app's {error:{code,message,message_ar}} envelope that every
+  //      client parses, and echoed the internal schema pattern back.
+
+  fastify.setErrorHandler(errorHandler);
+  fastify.setNotFoundHandler(notFoundHandler);
+
   // ── API Routes (all prefixed with /v1) ─────────────────────
 
   await fastify.register(authRoutes, { prefix: '/v1' });
@@ -112,31 +134,6 @@ async function buildApp() {
   await fastify.register(bookingRoutes, { prefix: '/v1' });
   await fastify.register(businessRoutes, { prefix: '/v1' });
   await fastify.register(adminRoutes, { prefix: '/v1' });
-
-  // ── Global Error Handler ───────────────────────────────────
-
-  fastify.setErrorHandler((error: FastifyError, _request, reply) => {
-    fastify.log.error(error);
-
-    if (error.validation) {
-      return reply.code(400).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid request data.',
-          message_ar: 'بيانات الطلب غير صحيحة.',
-          details: error.validation,
-        },
-      });
-    }
-
-    return reply.code(error.statusCode ?? 500).send({
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred.',
-        message_ar: 'حدث خطأ غير متوقع.',
-      },
-    });
-  });
 
   return fastify;
 }
